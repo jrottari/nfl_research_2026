@@ -44,9 +44,19 @@ def test_new_schema_names_resolve():
 
 
 def test_old_schema_names_still_resolve():
-    old = pd.DataFrame(columns=["player_id", "player_name", "position", "season",
-                                "recent_team", "interceptions", "sacks",
-                                "fantasy_points", "fantasy_points_ppr"])
+    old = pd.DataFrame(
+        columns=[
+            "player_id",
+            "player_name",
+            "position",
+            "season",
+            "recent_team",
+            "interceptions",
+            "sacks",
+            "fantasy_points",
+            "fantasy_points_ppr",
+        ]
+    )
     resolved = schema.resolve(old.columns)
     assert resolved["team"] == "recent_team"
     assert resolved["interceptions"] == "interceptions"
@@ -158,9 +168,7 @@ def test_export_csv_is_table_shaped(boards, tmp_path):
 
 def test_export_all_writes_every_board(boards, tmp_path):
     settings = Settings(season=2025)
-    written = exports.export_all(
-        pipeline.to_export_map(boards, settings), tmp_path, quiet=True
-    )
+    written = exports.export_all(pipeline.to_export_map(boards, settings), tmp_path, quiet=True)
     assert len(written) == 8
     assert all(p.exists() and p.stat().st_size > 0 for p in written)
 

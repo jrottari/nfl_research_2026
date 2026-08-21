@@ -12,6 +12,7 @@ FORECAST_POSITIONS = ("QB", "RB", "WR", "TE")
 def _import_nflreadpy():
     try:
         import nflreadpy as nfl
+
         return nfl
     except ModuleNotFoundError as err:
         raise ModuleNotFoundError("nflreadpy is required. pip install nflreadpy") from err
@@ -42,7 +43,7 @@ def load_multi_season_weekly(
     df = schema.coerce_numeric(df)
 
     df["season"] = pd.to_numeric(df["season"], errors="coerce").astype("Int64")
-    df["week"]   = pd.to_numeric(df["week"],   errors="coerce").astype("Int64")
+    df["week"] = pd.to_numeric(df["week"], errors="coerce").astype("Int64")
 
     if season_type and "season_type" in df.columns:
         df = df[df["season_type"] == season_type].copy()
@@ -86,14 +87,13 @@ def defense_vs_position(weekly: pd.DataFrame) -> pd.DataFrame:
     g = weekly_allowed.groupby(["def_team", "season", "position"], sort=False)
 
     weekly_allowed["cum_count"] = g.cumcount()
-    weekly_allowed["cum_sum"]   = g["ppr_allowed_this_week"].cumsum()
+    weekly_allowed["cum_sum"] = g["ppr_allowed_this_week"].cumsum()
 
     # Shift so this week sees only *prior* weeks' data
     weekly_allowed["cum_count_prior"] = g["cum_count"].shift(1).fillna(0)
-    weekly_allowed["cum_sum_prior"]   = g["cum_sum"].shift(1).fillna(0)
-    weekly_allowed["opp_ppr_allowed_avg"] = (
-        weekly_allowed["cum_sum_prior"] /
-        weekly_allowed["cum_count_prior"].replace(0, float("nan"))
-    )
+    weekly_allowed["cum_sum_prior"] = g["cum_sum"].shift(1).fillna(0)
+    weekly_allowed["opp_ppr_allowed_avg"] = weekly_allowed["cum_sum_prior"] / weekly_allowed[
+        "cum_count_prior"
+    ].replace(0, float("nan"))
 
     return weekly_allowed[["def_team", "season", "week", "position", "opp_ppr_allowed_avg"]]

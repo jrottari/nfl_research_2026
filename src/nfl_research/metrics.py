@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
 import pandas as pd
 
@@ -27,7 +29,7 @@ def games_played(weekly: pd.DataFrame) -> pd.DataFrame:
     df["had_opportunity"] = (df["carries"] + df["targets"] + df["attempts"]) > 0
     df = df.sort_values(["player_id", "week"])
 
-    agg = {
+    agg: dict[str, tuple[str, Any]] = {
         "games": ("week", "nunique"),
         "games_active": ("had_opportunity", "sum"),
         "first_week": ("week", "min"),
@@ -76,17 +78,14 @@ def add_volume(df: pd.DataFrame) -> pd.DataFrame:
     out["scrim_yards"] = out["rushing_yards"] + out["receiving_yards"]
     out["total_yards"] = out["scrim_yards"] + out["passing_yards"]
     out["total_tds"] = (
-        out["passing_tds"] + out["rushing_tds"]
-        + out["receiving_tds"] + out["special_teams_tds"]
+        out["passing_tds"] + out["rushing_tds"] + out["receiving_tds"] + out["special_teams_tds"]
     )
     out["fumbles_lost"] = (
-        out["sack_fumbles_lost"] + out["rushing_fumbles_lost"]
-        + out["receiving_fumbles_lost"]
+        out["sack_fumbles_lost"] + out["rushing_fumbles_lost"] + out["receiving_fumbles_lost"]
     )
     out["turnovers"] = out["interceptions"] + out["fumbles_lost"]
     out["first_downs"] = (
-        out["passing_first_downs"] + out["rushing_first_downs"]
-        + out["receiving_first_downs"]
+        out["passing_first_downs"] + out["rushing_first_downs"] + out["receiving_first_downs"]
     )
     out["two_pt"] = out["passing_2pt"] + out["rushing_2pt"] + out["receiving_2pt"]
 
@@ -125,9 +124,8 @@ def weekly_consistency(weekly: pd.DataFrame, settings: Settings) -> pd.DataFrame
     there. ``floor`` and ``ceiling`` are the 10th and 90th percentile weeks.
     """
     df = weekly.copy()
-    df["week_pos_rank"] = (
-        df.groupby(["week", "position"])["fantasy_points_ppr"]
-          .rank(ascending=False, method="min")
+    df["week_pos_rank"] = df.groupby(["week", "position"])["fantasy_points_ppr"].rank(
+        ascending=False, method="min"
     )
 
     boom = df["position"].map(lambda p: settings.boom_bust.get(p, (np.inf, -np.inf))[0])
@@ -141,20 +139,20 @@ def weekly_consistency(weekly: pd.DataFrame, settings: Settings) -> pd.DataFrame
 
     out = (
         df.groupby("player_id")
-          .agg(
-              best_week=("fantasy_points_ppr", "max"),
-              worst_week=("fantasy_points_ppr", "min"),
-              median_week=("fantasy_points_ppr", "median"),
-              stdev=("fantasy_points_ppr", "std"),
-              floor=("fantasy_points_ppr", lambda x: x.quantile(0.10)),
-              ceiling=("fantasy_points_ppr", lambda x: x.quantile(0.90)),
-              boom_weeks=("is_boom", "sum"),
-              bust_weeks=("is_bust", "sum"),
-              starter_weeks=("is_starter", "sum"),
-              top5_weeks=("is_top5", "sum"),
-              best_pos_finish=("week_pos_rank", "min"),
-          )
-          .reset_index()
+        .agg(
+            best_week=("fantasy_points_ppr", "max"),
+            worst_week=("fantasy_points_ppr", "min"),
+            median_week=("fantasy_points_ppr", "median"),
+            stdev=("fantasy_points_ppr", "std"),
+            floor=("fantasy_points_ppr", lambda x: x.quantile(0.10)),
+            ceiling=("fantasy_points_ppr", lambda x: x.quantile(0.90)),
+            boom_weeks=("is_boom", "sum"),
+            bust_weeks=("is_bust", "sum"),
+            starter_weeks=("is_starter", "sum"),
+            top5_weeks=("is_top5", "sum"),
+            best_pos_finish=("week_pos_rank", "min"),
+        )
+        .reset_index()
     )
     for col in ("boom_weeks", "bust_weeks", "starter_weeks", "top5_weeks"):
         out[col] = out[col].astype(int)
@@ -174,17 +172,30 @@ def add_consistency_rates(df: pd.DataFrame) -> pd.DataFrame:
 def weekly_game_log(weekly: pd.DataFrame, player_ids) -> pd.DataFrame:
     """Tidy week-by-week rows for a set of players - pivot-table fuel."""
     cols = [
-        "player_id", "player_name", "position", "team", "opponent", "week",
-        "fantasy_points_ppr", "fantasy_points", "carries", "rushing_yards",
-        "rushing_tds", "targets", "receptions", "receiving_yards",
-        "receiving_tds", "attempts", "passing_yards", "passing_tds",
+        "player_id",
+        "player_name",
+        "position",
+        "team",
+        "opponent",
+        "week",
+        "fantasy_points_ppr",
+        "fantasy_points",
+        "carries",
+        "rushing_yards",
+        "rushing_tds",
+        "targets",
+        "receptions",
+        "receiving_yards",
+        "receiving_tds",
+        "attempts",
+        "passing_yards",
+        "passing_tds",
         "interceptions",
     ]
     df = weekly[weekly["player_id"].isin(list(player_ids))].copy()
     if "week_pos_rank" not in df.columns:
-        df["week_pos_rank"] = (
-            df.groupby(["week", "position"])["fantasy_points_ppr"]
-              .rank(ascending=False, method="min")
+        df["week_pos_rank"] = df.groupby(["week", "position"])["fantasy_points_ppr"].rank(
+            ascending=False, method="min"
         )
     cols.append("week_pos_rank")
     cols = [c for c in cols if c in df.columns]

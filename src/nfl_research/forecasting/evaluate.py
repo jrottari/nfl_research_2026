@@ -32,7 +32,7 @@ def score_model(cv: pd.DataFrame, model_name: str) -> dict:
         "bias": bias,
         "pearson_r": corr,
         "rw_mae": rw_mae,
-        "skill_score": skill,   # positive = better than random walk
+        "skill_score": skill,  # positive = better than random walk
         "n_player_seasons": len(sub),
         "n_eval_seasons": sub["eval_season"].nunique(),
         "yearly_mae": yearly.to_dict(),
@@ -44,15 +44,17 @@ def summary_table(cv: pd.DataFrame) -> pd.DataFrame:
     rows = []
     for name in cv["model"].unique():
         m = score_model(cv, name)
-        rows.append({
-            "Model": m["model"],
-            "MAE": round(m["mae"], 2),
-            "RMSE": round(m["rmse"], 2),
-            "Bias": round(m["bias"], 2),
-            "Pearson r": round(m["pearson_r"], 3),
-            "Skill vs RW": round(m["skill_score"], 3),
-            "N player-seasons": m["n_player_seasons"],
-        })
+        rows.append(
+            {
+                "Model": m["model"],
+                "MAE": round(m["mae"], 2),
+                "RMSE": round(m["rmse"], 2),
+                "Bias": round(m["bias"], 2),
+                "Pearson r": round(m["pearson_r"], 3),
+                "Skill vs RW": round(m["skill_score"], 3),
+                "N player-seasons": m["n_player_seasons"],
+            }
+        )
     df = pd.DataFrame(rows).sort_values("MAE")
     df["Rank"] = range(1, len(df) + 1)
     return df.reset_index(drop=True)

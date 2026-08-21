@@ -28,10 +28,11 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from .source_cache import cached_loader
+
 log = logging.getLogger(__name__)
 
-_CACHE_DIR = Path(__file__).resolve().parents[4] / "data" / "cache"
-_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+_CACHE_DIR = Path(__file__).resolve().parents[3] / "data" / "cache"
 
 FIRST_SEASON = 2006  # ff_opportunity first available
 ECR_FIRST_SEASON = 2019  # ff_rankings historical coverage
@@ -40,6 +41,7 @@ ECR_FIRST_SEASON = 2019  # ff_rankings historical coverage
 # ---------------------------------------------------------------------------
 # Caching helpers
 # ---------------------------------------------------------------------------
+
 
 def _cache_path(name: str) -> Path:
     return _CACHE_DIR / f"{name}.parquet"
@@ -54,6 +56,7 @@ def _load_cached_or_fetch(name: str, loader_fn) -> pd.DataFrame:
             pass
     df = loader_fn()
     try:
+        path.parent.mkdir(parents=True, exist_ok=True)
         df.to_parquet(path, index=False)
     except Exception as exc:
         log.warning("Could not cache %s: %s", name, exc)
@@ -64,22 +67,33 @@ def _load_cached_or_fetch(name: str, loader_fn) -> pd.DataFrame:
 # FF Opportunity features
 # ---------------------------------------------------------------------------
 
+
 def _opportunity_raw(seasons: list[int]) -> pd.DataFrame:
     import nflreadpy as nfl
-    pl_df = nfl.load_ff_opportunity(seasons=seasons, stat_type="weekly")
+
+    key = "_".join(map(str, sorted(seasons)))
+    frame = cached_loader(
+        f"raw_ff_opportunity_{key}",
+        lambda: nfl.load_ff_opportunity(seasons=seasons, stat_type="weekly"),
+    )
     keep = [
-        "season", "week", "player_id", "full_name", "position",
-        "total_fantasy_points", "total_fantasy_points_exp",
+        "season",
+        "week",
+        "player_id",
+        "full_name",
+        "position",
+        "total_fantasy_points",
+        "total_fantasy_points_exp",
         "total_fantasy_points_diff",
     ]
-    available = [c for c in keep if c in pl_df.columns]
-    return pl_df.select(available).to_pandas()
+    return frame[[c for c in keep if c in frame.columns]]
 
 
 def build_opportunity_features(
     panel: pd.DataFrame,
     as_of: datetime | None = None,
     seasons: list[int] | None = None,
+    opportunity: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Add exp_fantasy_pts, exp_fantasy_ppg, points_over_expected, poe_ppg.
 
@@ -101,7 +115,7 @@ def build_opportunity_features(
         seasons = list(set(prior_seasons))
 
     try:
-        opp_raw = _opportunity_raw(seasons)
+        opp_raw = opportunity.copy() if opportunity is not None else _opportunity_raw(seasons)
     except Exception as exc:
         log.warning("load_ff_opportunity failed: %s", exc)
         return panel
@@ -112,12 +126,16 @@ def build_opportunity_features(
         opp_raw = opp_raw[opp_raw["season"] <= cutoff_season]
 
     # Aggregate to season totals per player
-    agg = opp_raw.groupby(["player_id", "season"]).agg(
-        exp_fantasy_pts=("total_fantasy_points_exp", "sum"),
-        actual_pts=("total_fantasy_points", "sum"),
-        points_over_expected=("total_fantasy_points_diff", "sum"),
-        weeks=("week", "count"),
-    ).reset_index()
+    agg = (
+        opp_raw.groupby(["player_id", "season"])
+        .agg(
+            exp_fantasy_pts=("total_fantasy_points_exp", "sum"),
+            actual_pts=("total_fantasy_points", "sum"),
+            points_over_expected=("total_fantasy_points_diff", "sum"),
+            weeks=("week", "count"),
+        )
+        .reset_index()
+    )
 
     agg["exp_fantasy_ppg"] = agg["exp_fantasy_pts"] / agg["weeks"].replace(0, np.nan)
     agg["poe_ppg"] = agg["points_over_expected"] / agg["weeks"].replace(0, np.nan)
@@ -126,8 +144,16 @@ def build_opportunity_features(
 
     panel = panel.copy()
     panel = panel.merge(
-        agg[["player_id", "season", "exp_fantasy_pts", "exp_fantasy_ppg",
-             "points_over_expected", "poe_ppg"]],
+        agg[
+            [
+                "player_id",
+                "season",
+                "exp_fantasy_pts",
+                "exp_fantasy_ppg",
+                "points_over_expected",
+                "poe_ppg",
+            ]
+        ],
         on=["player_id", "season"],
         how="left",
     )
@@ -147,10 +173,20 @@ def _normalize_name(s: str) -> str:
 
 def _ecr_raw() -> pd.DataFrame:
     import nflreadpy as nfl
-    pl_df = nfl.load_ff_rankings(type="all")
-    keep = ["scrape_date", "player", "pos", "ecr", "page_type", "ecr_type"]
-    available = [c for c in keep if c in pl_df.columns]
-    return pl_df.select(available).to_pandas()
+
+    frame = cached_loader("raw_ff_rankings_all", lambda: nfl.load_ff_rankings(type="all"))
+    keep = [
+        "scrape_date",
+        "player",
+        "pos",
+        "ecr",
+        "page_type",
+        "ecr_type",
+        "projected_points",
+        "fantasy_points",
+        "projection",
+    ]
+    return frame[[c for c in keep if c in frame.columns]]
 
 
 def _parse_ecr_season(scrape_date: str) -> int:
@@ -166,6 +202,7 @@ def _parse_ecr_season(scrape_date: str) -> int:
 def build_ecr_features(
     panel: pd.DataFrame,
     as_of: datetime | None = None,
+    rankings: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Add ecr_rank and ecr_pos_rank to panel.
 
@@ -177,19 +214,21 @@ def build_ecr_features(
     ~80-90% match rate; unmatched rows get NaN (MarketConsensusModel handles NaN).
     """
     try:
-        ecr_raw = _load_cached_or_fetch("ecr_all", _ecr_raw)
+        ecr_raw = (
+            rankings.copy() if rankings is not None else _load_cached_or_fetch("ecr_all", _ecr_raw)
+        )
     except Exception as exc:
         log.warning("load_ff_rankings failed: %s", exc)
         return panel
 
     ecr_raw["scrape_date"] = pd.to_datetime(ecr_raw["scrape_date"], errors="coerce")
     ecr_raw["month"] = ecr_raw["scrape_date"].dt.month
-    ecr_raw["year"]  = ecr_raw["scrape_date"].dt.year
+    ecr_raw["year"] = ecr_raw["scrape_date"].dt.year
 
     # Preseason window: June 1 – Sep 10
     preseason = ecr_raw[
-        (ecr_raw["month"].between(6, 9)) &
-        (ecr_raw["ecr_type"].isin(["ro", "rp"]))  # redraft overall or PPR
+        (ecr_raw["month"].between(6, 9))
+        & (ecr_raw["ecr_type"].isin(["ro", "rp"]))  # redraft overall or PPR
     ].copy()
     preseason["season"] = preseason["year"].astype(int)
 
@@ -198,11 +237,16 @@ def build_ecr_features(
     preseason = preseason.drop_duplicates(subset=["player", "pos", "season"], keep="last")
 
     # Compute overall and within-position ECR rank
-    preseason["ecr_rank"] = (
-        preseason.groupby("season")["ecr"].rank(method="first", ascending=True)
+    preseason["ecr_rank"] = preseason.groupby("season")["ecr"].rank(method="first", ascending=True)
+    preseason["ecr_pos_rank"] = preseason.groupby(["season", "pos"])["ecr"].rank(
+        method="first", ascending=True
     )
-    preseason["ecr_pos_rank"] = (
-        preseason.groupby(["season", "pos"])["ecr"].rank(method="first", ascending=True)
+    projection_col = next(
+        (c for c in ("projected_points", "fantasy_points", "projection") if c in preseason),
+        None,
+    )
+    preseason["ecr_projection"] = (
+        pd.to_numeric(preseason[projection_col], errors="coerce") if projection_col else np.nan
     )
 
     preseason["_name_norm"] = preseason["player"].apply(_normalize_name)
@@ -212,7 +256,9 @@ def build_ecr_features(
     panel["_name_norm"] = panel["player_name"].apply(_normalize_name)
 
     # Join on (normalized_name, season) — imperfect but sufficient for ECR
-    ecr_join = preseason[["_name_norm", "season", "ecr_rank", "ecr_pos_rank"]].copy()
+    ecr_join = preseason[
+        ["_name_norm", "season", "ecr_rank", "ecr_pos_rank", "ecr_projection"]
+    ].copy()
 
     # as_of guard: only use ECR published before as_of
     if as_of is not None:
@@ -227,35 +273,59 @@ def build_ecr_features(
 # Weekly usage features
 # ---------------------------------------------------------------------------
 
+
 def _weekly_stats_raw(seasons: list[int]) -> pd.DataFrame:
     import nflreadpy as nfl
-    pl_df = nfl.load_player_stats(seasons=seasons, summary_level="week")
+
+    key = "_".join(map(str, sorted(seasons)))
+    frame = cached_loader(
+        f"raw_player_weekly_{key}",
+        lambda: nfl.load_player_stats(seasons=seasons, summary_level="week"),
+    )
     keep = [
-        "season", "week", "player_id", "player_name", "position",
-        "fantasy_points_ppr", "targets", "carries",
+        "season",
+        "week",
+        "player_id",
+        "player_name",
+        "position",
+        "fantasy_points_ppr",
+        "targets",
+        "carries",
         "passing_yards",  # for team pass volume (used for share calc)
     ]
-    available = [c for c in keep if c in pl_df.columns]
-    return pl_df.select(available).to_pandas()
+    return frame[[c for c in keep if c in frame.columns]]
 
 
 def _team_volume_raw(seasons: list[int]) -> pd.DataFrame:
     """Per-team per-season pass and rush totals (for share computation)."""
     import nflreadpy as nfl
-    pl_df = nfl.load_player_stats(seasons=seasons, summary_level="season")
+
+    key = "_".join(map(str, sorted(seasons)))
+    frame = cached_loader(
+        f"raw_player_season_{key}",
+        lambda: nfl.load_player_stats(seasons=seasons, summary_level="reg"),
+    )
     keep = [
-        "season", "recent_team", "player_id", "position",
-        "targets", "carries",
+        "season",
+        "team",
+        "recent_team",
+        "player_id",
+        "position",
+        "targets",
+        "carries",
     ]
-    available = [c for c in keep if c in pl_df.columns]
-    df = pl_df.select(available).to_pandas()
-    return df
+    out = frame[[c for c in keep if c in frame.columns]].copy()
+    if "recent_team" not in out and "team" in out:
+        out = out.rename(columns={"team": "recent_team"})
+    return out
 
 
 def build_weekly_features(
     panel: pd.DataFrame,
     as_of: datetime | None = None,
     seasons: list[int] | None = None,
+    weekly_stats: pd.DataFrame | None = None,
+    season_stats: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Add target_share_lag1, carry_share_lag1, weeks_played_lag1, h2_vs_h1_ppr.
 
@@ -272,7 +342,7 @@ def build_weekly_features(
         seasons = list(set(prior_seasons))
 
     try:
-        weekly = _weekly_stats_raw(seasons)
+        weekly = weekly_stats.copy() if weekly_stats is not None else _weekly_stats_raw(seasons)
     except Exception as exc:
         log.warning("load_player_stats(weekly) failed: %s", exc)
         return panel
@@ -283,9 +353,7 @@ def build_weekly_features(
 
     # Weeks played
     weeks_played = (
-        weekly.groupby(["player_id", "season"])
-        .size()
-        .reset_index(name="weeks_played_lag1")
+        weekly.groupby(["player_id", "season"]).size().reset_index(name="weeks_played_lag1")
     )
 
     # H1 vs H2 trajectory (weeks 1-9 vs 10-18)
@@ -306,14 +374,16 @@ def build_weekly_features(
     # Simple proxy: each player's targets / sum of all targets on their recorded plays
     # (full team target share needs roster context; use within-data share)
     target_totals = (
-        weekly.groupby(["player_id", "season"])["targets"]
-        .sum()
-        .reset_index(name="player_targets")
+        weekly.groupby(["player_id", "season"])["targets"].sum().reset_index(name="player_targets")
     )
 
     # Team total targets (need team column — use per-season stats if available)
     try:
-        season_stats = _team_volume_raw(seasons)
+        season_stats = (
+            season_stats.copy() if season_stats is not None else _team_volume_raw(seasons)
+        )
+        if "recent_team" not in season_stats and "team" in season_stats:
+            season_stats = season_stats.rename(columns={"team": "recent_team"})
         team_targets = (
             season_stats.groupby(["season", "recent_team"])["targets"]
             .sum()
@@ -338,11 +408,10 @@ def build_weekly_features(
 
     # Carry share (similarly approximate)
     carry_totals = (
-        weekly.groupby(["player_id", "season"])["carries"]
-        .sum()
-        .reset_index(name="player_carries")
+        weekly.groupby(["player_id", "season"])["carries"].sum().reset_index(name="player_carries")
     )
     try:
+        assert season_stats is not None
         team_carries = (
             season_stats.groupby(["season", "recent_team"])["carries"]
             .sum()
@@ -373,12 +442,14 @@ def build_weekly_features(
 # Combined tier-1 builder
 # ---------------------------------------------------------------------------
 
+
 def build_tier1_features(
     panel: pd.DataFrame,
     as_of: datetime | None = None,
     include_opportunity: bool = True,
     include_ecr: bool = True,
     include_weekly: bool = True,
+    sources: dict[str, pd.DataFrame] | None = None,
 ) -> pd.DataFrame:
     """Apply all tier-1 additions to a tier-0 enhanced panel.
 
@@ -392,13 +463,21 @@ def build_tier1_features(
     Returns:
         panel with additional columns per REGISTRY tier-1 entries.
     """
+    sources = sources or {}
     if include_opportunity:
-        panel = build_opportunity_features(panel, as_of=as_of)
+        panel = build_opportunity_features(
+            panel, as_of=as_of, opportunity=sources.get("ff_opportunity")
+        )
 
     if include_ecr:
-        panel = build_ecr_features(panel, as_of=as_of)
+        panel = build_ecr_features(panel, as_of=as_of, rankings=sources.get("ff_rankings"))
 
     if include_weekly:
-        panel = build_weekly_features(panel, as_of=as_of)
+        panel = build_weekly_features(
+            panel,
+            as_of=as_of,
+            weekly_stats=sources.get("player_weekly"),
+            season_stats=sources.get("player_season"),
+        )
 
     return panel

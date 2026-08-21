@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
-import numpy as np
+from datetime import datetime
+
 import pandas as pd
+
+from .feature_registry import cols_for_tier
 
 POSITION_CODES: dict[str, int] = {"QB": 0, "RB": 1, "WR": 2, "TE": 3}
 
@@ -33,6 +36,10 @@ def build_panel(df: pd.DataFrame) -> pd.DataFrame:
         "fantasy_points_ppr": ("fantasy_points_ppr", "sum"),
         "fantasy_points": ("fantasy_points", "sum"),
     }
+    if "team" in df.columns:
+        agg["team"] = ("team", "last")
+    elif "recent_team" in df.columns:
+        agg["team"] = ("recent_team", "last")
     if "games" in df.columns:
         agg["games"] = ("games", "max")
     if "ppg_ppr" in df.columns:
@@ -105,15 +112,83 @@ _FEATURE_COLS = [
 ]
 
 
-def feature_cols() -> list[str]:
-    return list(_FEATURE_COLS)
+def feature_cols(max_tier: int = 0) -> list[str]:
+    """Registered numeric features through ``max_tier``."""
+    return cols_for_tier(max_tier)
 
 
-def feature_matrix(panel: pd.DataFrame, fill_value: float = 0.0) -> pd.DataFrame:
-    """Extract and zero-fill the feature matrix."""
-    X = panel[[c for c in _FEATURE_COLS if c in panel.columns]].copy()
+def feature_matrix(
+    panel: pd.DataFrame,
+    fill_value: float = 0.0,
+    max_tier: int = 0,
+) -> pd.DataFrame:
+    """Slice the wide panel using the feature registry and zero-fill values."""
+    wanted = feature_cols(max_tier)
+    X = panel[[c for c in wanted if c in panel.columns]].copy()
     X = X.fillna(fill_value)
     return X
+
+
+def build_wide_panel(
+    panel: pd.DataFrame,
+    *,
+    max_tier: int,
+    as_of: datetime,
+    sources: dict[str, pd.DataFrame] | None = None,
+    fetch_tier0: bool = False,
+) -> pd.DataFrame:
+    """Apply tier builders to an existing lag panel with an explicit cutoff.
+
+    External frames may be injected through ``sources`` for an offline,
+    reproducible build. Tier-0 static loaders are fetched only when explicitly
+    requested; missing-lag and rookie indicators are always constructed.
+    """
+    from .tier0 import build_tier0_features
+    from .tier1 import build_tier1_features
+    from .tier2 import build_tier2_features
+    from .tier3 import build_tier3_features
+    from .tier4 import build_tier4_features
+
+    sources = sources or {}
+    out = build_tier0_features(
+        panel,
+        as_of=as_of,
+        include_age=fetch_tier0 or "players" in sources,
+        include_draft=fetch_tier0 or "draft_picks" in sources,
+        sources=sources,
+    )
+    if max_tier >= 1:
+        out = build_tier1_features(out, as_of=as_of, sources=sources)
+    if max_tier >= 2:
+        out = build_tier2_features(out, as_of=as_of, sources=sources)
+    if max_tier >= 3:
+        out = build_tier3_features(out, as_of=as_of, sources=sources)
+    if max_tier >= 4:
+        out = build_tier4_features(out, as_of=as_of, sources=sources)
+    return out.reset_index(drop=True)
+
+
+def build_historical_wide_panel(
+    panel: pd.DataFrame,
+    *,
+    max_tier: int,
+    sources: dict[str, pd.DataFrame],
+) -> pd.DataFrame:
+    """Build every forecast season using its own August 1 information cutoff."""
+    from datetime import datetime
+
+    parts = []
+    for season in sorted(int(value) for value in panel["season"].dropna().unique()):
+        season_panel = panel[panel["season"] == season].copy()
+        built = build_wide_panel(
+            season_panel,
+            max_tier=max_tier,
+            as_of=datetime(season, 8, 1),
+            sources=sources,
+        )
+        if not built.empty:
+            parts.append(built)
+    return pd.concat(parts, ignore_index=True) if parts else panel.iloc[:0].copy()
 
 
 def make_forecast_row(

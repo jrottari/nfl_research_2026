@@ -6,7 +6,6 @@ All models expose fit(X, y) / predict(X) on DataFrames from
 
 from __future__ import annotations
 
-import warnings
 from typing import Any
 
 import numpy as np
@@ -17,6 +16,7 @@ from sklearn.preprocessing import StandardScaler
 
 try:
     import xgboost as xgb
+
     _XGB_AVAILABLE = True
 except ImportError:
     _XGB_AVAILABLE = False
@@ -29,7 +29,7 @@ class RollingMeanModel:
         self.n = n
         self.name = f"rolling_mean_{n}g"
 
-    def fit(self, X: pd.DataFrame, y: pd.Series) -> "RollingMeanModel":
+    def fit(self, X: pd.DataFrame, y: pd.Series) -> RollingMeanModel:
         return self
 
     def predict(self, X: pd.DataFrame) -> np.ndarray:
@@ -44,11 +44,16 @@ class SeasonAvgModel:
 
     name = "season_avg"
 
-    def fit(self, X: pd.DataFrame, y: pd.Series) -> "SeasonAvgModel":
+    def fit(self, X: pd.DataFrame, y: pd.Series) -> SeasonAvgModel:
         return self
 
     def predict(self, X: pd.DataFrame) -> np.ndarray:
-        return X["ppr_season_avg"].fillna(X.get("ppr_lag1", pd.Series(0, index=X.index))).fillna(0).values.clip(min=0)
+        return (
+            X["ppr_season_avg"]
+            .fillna(X.get("ppr_lag1", pd.Series(0, index=X.index)))
+            .fillna(0)
+            .values.clip(min=0)
+        )
 
 
 class OpponentAdjustedModel:
@@ -63,7 +68,7 @@ class OpponentAdjustedModel:
     def __init__(self) -> None:
         self._pos_mean_allowed: dict[int, float] = {}
 
-    def fit(self, X: pd.DataFrame, y: pd.Series) -> "OpponentAdjustedModel":
+    def fit(self, X: pd.DataFrame, y: pd.Series) -> OpponentAdjustedModel:
         if "opp_ppr_allowed_avg" in X.columns and "pos_code" in X.columns:
             for code in X["pos_code"].unique():
                 mask = (X["pos_code"] == code) & X["opp_ppr_allowed_avg"].notna()
@@ -104,13 +109,13 @@ class WeightedRollingModel:
 
     def _blend(self, X: pd.DataFrame) -> np.ndarray:
         lag1 = X["ppr_lag1"].fillna(0).values
-        ma3  = X["ppr_ma3"].fillna(0).values
-        ma3  = np.where(ma3 == 0, lag1, ma3)
-        avg  = X["ppr_season_avg"].fillna(0).values
-        avg  = np.where(avg == 0, ma3, avg)
+        ma3 = X["ppr_ma3"].fillna(0).values
+        ma3 = np.where(ma3 == 0, lag1, ma3)
+        avg = X["ppr_season_avg"].fillna(0).values
+        avg = np.where(avg == 0, ma3, avg)
         return 0.50 * lag1 + 0.30 * ma3 + 0.20 * avg
 
-    def fit(self, X: pd.DataFrame, y: pd.Series) -> "WeightedRollingModel":
+    def fit(self, X: pd.DataFrame, y: pd.Series) -> WeightedRollingModel:
         blend = self._blend(X)
         self._intercept = float(np.mean(y.values - blend))
         return self
@@ -130,22 +135,33 @@ class RidgeWeeklyModel:
         self._cols: list[str] = []
 
     _BASE_COLS = [
-        "ppr_lag1", "ppr_ma3", "ppr_ma5", "ppr_season_avg",
-        "targets_ma3", "carries_ma3", "receptions_ma3",
-        "target_share_ma3", "ppr_trend", "games_played",
-        "week_norm", "opp_ppr_allowed_avg",
-        "prior_season_ppg", "prior_season_games",
+        "ppr_lag1",
+        "ppr_ma3",
+        "ppr_ma5",
+        "ppr_season_avg",
+        "targets_ma3",
+        "carries_ma3",
+        "receptions_ma3",
+        "target_share_ma3",
+        "ppr_trend",
+        "games_played",
+        "week_norm",
+        "opp_ppr_allowed_avg",
+        "prior_season_ppg",
+        "prior_season_games",
     ]
 
-    def fit(self, X: pd.DataFrame, y: pd.Series) -> "RidgeWeeklyModel":
+    def fit(self, X: pd.DataFrame, y: pd.Series) -> RidgeWeeklyModel:
         self._cols = [c for c in self._BASE_COLS if c in X.columns]
         dummies = pd.get_dummies(X["pos_code"].astype(str), prefix="pos", drop_first=True)
         Xf = pd.concat([X[self._cols].fillna(0), dummies], axis=1)
         self._dummy_cols = list(Xf.columns)
-        self._pipeline = Pipeline([
-            ("scaler", StandardScaler()),
-            ("ridge", Ridge(alpha=self.alpha)),
-        ])
+        self._pipeline = Pipeline(
+            [
+                ("scaler", StandardScaler()),
+                ("ridge", Ridge(alpha=self.alpha)),
+            ]
+        )
         self._pipeline.fit(Xf, y)
         return self
 
@@ -186,9 +202,18 @@ class XGBoostWeeklyModel:
         self._model: Any = None
         self._cols: list[str] = []
 
-    def fit(self, X: pd.DataFrame, y: pd.Series) -> "XGBoostWeeklyModel":
-        skip = {"player_id", "player_name", "position", "season", "week",
-                "season_type", "team", "opponent", "game_id"}
+    def fit(self, X: pd.DataFrame, y: pd.Series) -> XGBoostWeeklyModel:
+        skip = {
+            "player_id",
+            "player_name",
+            "position",
+            "season",
+            "week",
+            "season_type",
+            "team",
+            "opponent",
+            "game_id",
+        }
         self._cols = [c for c in X.columns if c not in skip]
         Xf = X[self._cols].fillna(0)
         self._model = xgb.XGBRegressor(**self._params)
@@ -200,9 +225,9 @@ class XGBoostWeeklyModel:
         return self._model.predict(Xf).clip(min=0)
 
     def feature_importance(self) -> pd.Series:
-        return pd.Series(
-            self._model.feature_importances_, index=self._cols
-        ).sort_values(ascending=False)
+        return pd.Series(self._model.feature_importances_, index=self._cols).sort_values(
+            ascending=False
+        )
 
 
 def WEEKLY_MODELS() -> list:

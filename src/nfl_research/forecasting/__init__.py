@@ -14,9 +14,18 @@ Quick start::
     from nfl_research.forecasting.cv import walk_forward_cv
     from nfl_research.forecasting.evaluate import summary_table
 """
+
 from .cv import walk_forward_cv
 from .data import load_multi_season
 from .evaluate import summary_table
+from .evaluation import ablation_table, run_ablation
 from .models import MODELS
 
-__all__ = ["load_multi_season", "walk_forward_cv", "summary_table", "MODELS"]
+__all__ = [
+    "load_multi_season",
+    "walk_forward_cv",
+    "summary_table",
+    "MODELS",
+    "run_ablation",
+    "ablation_table",
+]

@@ -12,11 +12,10 @@ FORECAST_POSITIONS = ("QB", "RB", "WR", "TE")
 def _import_nflreadpy():
     try:
         import nflreadpy as nfl
+
         return nfl
     except ModuleNotFoundError as err:
-        raise ModuleNotFoundError(
-            "nflreadpy is required. Run: pip install nflreadpy"
-        ) from err
+        raise ModuleNotFoundError("nflreadpy is required. Run: pip install nflreadpy") from err
 
 
 def _to_pandas(df) -> pd.DataFrame:

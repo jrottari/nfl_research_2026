@@ -83,25 +83,51 @@ def make_weekly(season: int = 2025, n_players: int = 520, seed: int = 11) -> pd.
 
     df = pd.DataFrame(rows)
     df["fantasy_points"] = (
-        df["passing_yards"] / 25 + df["passing_tds"] * 4 - df["passing_interceptions"] * 2
-        + df["rushing_yards"] / 10 + df["rushing_tds"] * 6
-        + df["receiving_yards"] / 10 + df["receiving_tds"] * 6
+        df["passing_yards"] / 25
+        + df["passing_tds"] * 4
+        - df["passing_interceptions"] * 2
+        + df["rushing_yards"] / 10
+        + df["rushing_tds"] * 6
+        + df["receiving_yards"] / 10
+        + df["receiving_tds"] * 6
     )
     df["fantasy_points_ppr"] = df["fantasy_points"] + df["receptions"]
     return df
 
 
 SUM_COLS = [
-    "completions", "attempts", "passing_yards", "passing_tds",
-    "passing_interceptions", "sacks_suffered", "sack_yards_lost", "sack_fumbles",
-    "sack_fumbles_lost", "passing_air_yards", "passing_yards_after_catch",
-    "passing_first_downs", "passing_2pt_conversions", "carries", "rushing_yards",
-    "rushing_tds", "rushing_fumbles", "rushing_fumbles_lost",
-    "rushing_first_downs", "rushing_2pt_conversions", "receptions", "targets",
-    "receiving_yards", "receiving_tds", "receiving_fumbles",
-    "receiving_fumbles_lost", "receiving_air_yards",
-    "receiving_yards_after_catch", "receiving_first_downs",
-    "receiving_2pt_conversions", "special_teams_tds", "fantasy_points",
+    "completions",
+    "attempts",
+    "passing_yards",
+    "passing_tds",
+    "passing_interceptions",
+    "sacks_suffered",
+    "sack_yards_lost",
+    "sack_fumbles",
+    "sack_fumbles_lost",
+    "passing_air_yards",
+    "passing_yards_after_catch",
+    "passing_first_downs",
+    "passing_2pt_conversions",
+    "carries",
+    "rushing_yards",
+    "rushing_tds",
+    "rushing_fumbles",
+    "rushing_fumbles_lost",
+    "rushing_first_downs",
+    "rushing_2pt_conversions",
+    "receptions",
+    "targets",
+    "receiving_yards",
+    "receiving_tds",
+    "receiving_fumbles",
+    "receiving_fumbles_lost",
+    "receiving_air_yards",
+    "receiving_yards_after_catch",
+    "receiving_first_downs",
+    "receiving_2pt_conversions",
+    "special_teams_tds",
+    "fantasy_points",
     "fantasy_points_ppr",
 ]
 
@@ -109,8 +135,14 @@ SUM_COLS = [
 def make_season_totals(weekly: pd.DataFrame) -> pd.DataFrame:
     """Mimic ``load_player_stats(summary_level='reg')``."""
     reg = weekly[weekly["season_type"] == "REG"]
-    keys = ["player_id", "player_name", "player_display_name", "position",
-            "position_group", "season"]
+    keys = [
+        "player_id",
+        "player_name",
+        "player_display_name",
+        "position",
+        "position_group",
+        "season",
+    ]
     out = reg.groupby(keys, as_index=False)[SUM_COLS].sum()
     out["games"] = reg.groupby("player_id")["week"].nunique().reindex(out["player_id"]).values
     out["team"] = reg.groupby("player_id")["team"].last().reindex(out["player_id"]).values

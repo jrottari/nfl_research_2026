@@ -16,18 +16,19 @@ import logging
 from datetime import datetime
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
+
+from .source_cache import cached_loader
 
 log = logging.getLogger(__name__)
 
-_CACHE_DIR = Path(__file__).resolve().parents[4] / "data" / "cache"
-_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+_CACHE_DIR = Path(__file__).resolve().parents[3] / "data" / "cache"
 
 
 # ---------------------------------------------------------------------------
 # Caching helpers
 # ---------------------------------------------------------------------------
+
 
 def _cache_path(name: str) -> Path:
     return _CACHE_DIR / f"{name}.parquet"
@@ -43,6 +44,7 @@ def _load_cached_or_fetch(name: str, loader_fn) -> pd.DataFrame:
             pass
     df = loader_fn()
     try:
+        path.parent.mkdir(parents=True, exist_ok=True)
         df.to_parquet(path, index=False)
     except Exception as exc:
         log.warning("Could not cache %s: %s", name, exc)
@@ -53,29 +55,32 @@ def _load_cached_or_fetch(name: str, loader_fn) -> pd.DataFrame:
 # Raw loaders (polars → pandas)
 # ---------------------------------------------------------------------------
 
+
 def _players_raw() -> pd.DataFrame:
     import nflreadpy as nfl
-    pl_df = nfl.load_players()
+
+    frame = cached_loader("raw_players", nfl.load_players)
     cols = ["gsis_id", "display_name", "birth_date", "position"]
-    available = [c for c in cols if c in pl_df.columns]
-    return pl_df.select(available).to_pandas()
+    return frame[[c for c in cols if c in frame.columns]]
 
 
 def _draft_picks_raw() -> pd.DataFrame:
     import nflreadpy as nfl
-    pl_df = nfl.load_draft_picks()
+
+    frame = cached_loader("raw_draft_picks", nfl.load_draft_picks)
     cols = ["season", "round", "pick", "gsis_id", "pfr_player_name", "position", "category"]
-    available = [c for c in cols if c in pl_df.columns]
-    return pl_df.select(available).to_pandas()
+    return frame[[c for c in cols if c in frame.columns]]
 
 
 # ---------------------------------------------------------------------------
 # Age features
 # ---------------------------------------------------------------------------
 
+
 def build_age_features(
     panel: pd.DataFrame,
     as_of: datetime | None = None,
+    players: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Add ``age`` and ``age_squared`` to panel rows.
 
@@ -88,7 +93,9 @@ def build_age_features(
         # panel must have a 'season' column; we use the per-row season
         pass
 
-    players = _load_cached_or_fetch("players", _players_raw)
+    players = (
+        players.copy() if players is not None else _load_cached_or_fetch("players", _players_raw)
+    )
     players = players.rename(columns={"gsis_id": "player_id"})
     players["birth_date"] = pd.to_datetime(players["birth_date"], errors="coerce")
     players = players[["player_id", "birth_date"]].dropna()
@@ -106,13 +113,9 @@ def build_age_features(
         ref_date = None  # computed per-row
 
     if ref_date is not None:
-        panel["age"] = (
-            (ref_date - panel["birth_date"]).dt.days / 365.25
-        ).round(2)
+        panel["age"] = ((ref_date - panel["birth_date"]).dt.days / 365.25).round(2)
     else:
-        panel["age"] = (
-            (panel["_ref_date"] - panel["birth_date"]).dt.days / 365.25
-        ).round(2)
+        panel["age"] = ((panel["_ref_date"] - panel["birth_date"]).dt.days / 365.25).round(2)
         panel = panel.drop(columns=["_ref_date"])
 
     panel["age_squared"] = panel["age"] ** 2
@@ -124,9 +127,11 @@ def build_age_features(
 # Draft capital features
 # ---------------------------------------------------------------------------
 
+
 def build_draft_features(
     panel: pd.DataFrame,
     as_of: datetime | None = None,
+    picks: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Add draft_pick, draft_round, is_undrafted to panel.
 
@@ -134,7 +139,11 @@ def build_draft_features(
     Only uses picks from seasons <= as_of year (or panel season - 0).
     A player's draft year is inferred from their earliest season in the panel.
     """
-    picks = _load_cached_or_fetch("draft_picks", _draft_picks_raw)
+    picks = (
+        picks.copy()
+        if picks is not None
+        else _load_cached_or_fetch("draft_picks", _draft_picks_raw)
+    )
     picks = picks.rename(columns={"gsis_id": "player_id"})
     picks = picks[picks["player_id"].notna()].copy()
 
@@ -151,14 +160,15 @@ def build_draft_features(
     panel = panel.copy()
     panel = panel.merge(picks, on="player_id", how="left")
     panel["is_undrafted"] = panel["draft_pick"].isna().astype(int)
-    panel["draft_pick"] = panel["draft_pick"].fillna(300.0)   # large number = low capital
-    panel["draft_round"] = panel["draft_round"].fillna(8.0)   # 8 = undrafted sentinel
+    panel["draft_pick"] = panel["draft_pick"].fillna(300.0)  # large number = low capital
+    panel["draft_round"] = panel["draft_round"].fillna(8.0)  # 8 = undrafted sentinel
     return panel
 
 
 # ---------------------------------------------------------------------------
 # Missing-lag indicators
 # ---------------------------------------------------------------------------
+
 
 def add_missing_indicators(panel: pd.DataFrame) -> pd.DataFrame:
     """Add lag1_missing, lag2_missing, lag3_missing before fillna."""
@@ -176,6 +186,7 @@ def add_missing_indicators(panel: pd.DataFrame) -> pd.DataFrame:
 # is_rookie flag
 # ---------------------------------------------------------------------------
 
+
 def add_rookie_flag(panel: pd.DataFrame) -> pd.DataFrame:
     panel = panel.copy()
     panel["is_rookie"] = (panel["career_season"] == 0).astype(int)
@@ -186,11 +197,13 @@ def add_rookie_flag(panel: pd.DataFrame) -> pd.DataFrame:
 # Combined tier-0 builder
 # ---------------------------------------------------------------------------
 
+
 def build_tier0_features(
     panel: pd.DataFrame,
     as_of: datetime | None = None,
     include_age: bool = True,
     include_draft: bool = True,
+    sources: dict[str, pd.DataFrame] | None = None,
 ) -> pd.DataFrame:
     """Apply all tier-0 additions to a panel from features.build_panel().
 
@@ -205,18 +218,19 @@ def build_tier0_features(
         panel with additional columns: lag1_missing, lag2_missing, lag3_missing,
         is_rookie, [age, age_squared,] [draft_pick, draft_round, is_undrafted].
     """
+    sources = sources or {}
     panel = add_missing_indicators(panel)
     panel = add_rookie_flag(panel)
 
     if include_age:
         try:
-            panel = build_age_features(panel, as_of=as_of)
+            panel = build_age_features(panel, as_of=as_of, players=sources.get("players"))
         except Exception as exc:
             log.warning("Age features unavailable: %s", exc)
 
     if include_draft:
         try:
-            panel = build_draft_features(panel, as_of=as_of)
+            panel = build_draft_features(panel, as_of=as_of, picks=sources.get("draft_picks"))
         except Exception as exc:
             log.warning("Draft capital features unavailable: %s", exc)
 

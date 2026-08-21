@@ -23,16 +23,16 @@ from nfl_research.forecasting.data import top_n_in_season  # noqa: E402
 from nfl_research.forecasting.evaluate import summary_table  # noqa: E402
 from nfl_research.forecasting.features import build_panel, feature_matrix  # noqa: E402
 from nfl_research.forecasting.models import (  # noqa: E402
+    _XGB_AVAILABLE,
     ExponentialSmoothingModel,
     PositionMeanModel,
     RandomWalkModel,
     RegressionToMeanModel,
     RidgeModel,
-    _XGB_AVAILABLE,
 )
 
-
 # ---- Synthetic multi-season data -------------------------------------------
+
 
 def _make_multi_season(seasons=(2020, 2021, 2022, 2023), n_players=200):
     """Build a long-format multi-season frame from the fake fixture."""
@@ -60,6 +60,7 @@ def panel(multi_season):
 
 
 # ---- build_panel tests -------------------------------------------------------
+
 
 def test_panel_has_lag_columns(panel):
     for col in ("points_ppr_lag1", "ppg_lag1", "games_lag1", "exp_smooth"):
@@ -91,6 +92,7 @@ def test_feature_matrix_no_nans(panel):
 
 # ---- top_n_in_season --------------------------------------------------------
 
+
 def test_top_n_in_season_returns_set(multi_season):
     raw = multi_season.rename(columns={"fantasy_points_ppr": "fantasy_points_ppr"})
     ids = top_n_in_season(raw, 2021, n=50)
@@ -99,6 +101,7 @@ def test_top_n_in_season_returns_set(multi_season):
 
 
 # ---- Individual models -------------------------------------------------------
+
 
 @pytest.fixture(scope="module")
 def train_test(panel):
@@ -150,6 +153,7 @@ def test_ridge_no_negative_predictions(train_test):
 @pytest.mark.skipif(not _XGB_AVAILABLE, reason="xgboost not installed")
 def test_xgboost_runs(train_test):
     from nfl_research.forecasting.models import XGBoostModel
+
     train, test = train_test
     preds = _fit_predict(XGBoostModel(n_estimators=30), train, test)
     assert len(preds) == len(test)
@@ -158,41 +162,63 @@ def test_xgboost_runs(train_test):
 
 # ---- Walk-forward CV ---------------------------------------------------------
 
+
 def test_walk_forward_cv_returns_dataframe(panel):
     models = [RandomWalkModel(), PositionMeanModel()]
-    cv = walk_forward_cv(panel, models, eval_seasons=[2022, 2023],
-                         top_n_filter=50, min_train_seasons=1, verbose=False)
+    cv = walk_forward_cv(
+        panel,
+        models,
+        eval_seasons=[2022, 2023],
+        top_n_filter=50,
+        min_train_seasons=1,
+        verbose=False,
+    )
     assert isinstance(cv, pd.DataFrame)
     assert set(["model", "actual", "predicted", "abs_error"]).issubset(cv.columns)
 
 
 def test_cv_has_two_models(panel):
     models = [RandomWalkModel(), ExponentialSmoothingModel()]
-    cv = walk_forward_cv(panel, models, eval_seasons=[2023],
-                         top_n_filter=50, min_train_seasons=1, verbose=False)
+    cv = walk_forward_cv(
+        panel, models, eval_seasons=[2023], top_n_filter=50, min_train_seasons=1, verbose=False
+    )
     assert cv["model"].nunique() == 2
 
 
 def test_cv_abs_error_nonnegative(panel):
     models = [RandomWalkModel()]
-    cv = walk_forward_cv(panel, models, eval_seasons=[2023],
-                         top_n_filter=50, min_train_seasons=1, verbose=False)
+    cv = walk_forward_cv(
+        panel, models, eval_seasons=[2023], top_n_filter=50, min_train_seasons=1, verbose=False
+    )
     assert (cv["abs_error"] >= 0).all()
 
 
 # ---- Evaluate ---------------------------------------------------------------
 
+
 def test_summary_table_has_all_models(panel):
     models = [RandomWalkModel(), PositionMeanModel(), ExponentialSmoothingModel()]
-    cv = walk_forward_cv(panel, models, eval_seasons=[2022, 2023],
-                         top_n_filter=50, min_train_seasons=1, verbose=False)
+    cv = walk_forward_cv(
+        panel,
+        models,
+        eval_seasons=[2022, 2023],
+        top_n_filter=50,
+        min_train_seasons=1,
+        verbose=False,
+    )
     tbl = summary_table(cv)
     assert set(tbl["Model"]) == {m.name for m in models}
 
 
 def test_summary_table_sorted_by_mae(panel):
     models = [RandomWalkModel(), PositionMeanModel()]
-    cv = walk_forward_cv(panel, models, eval_seasons=[2022, 2023],
-                         top_n_filter=50, min_train_seasons=1, verbose=False)
+    cv = walk_forward_cv(
+        panel,
+        models,
+        eval_seasons=[2022, 2023],
+        top_n_filter=50,
+        min_train_seasons=1,
+        verbose=False,
+    )
     tbl = summary_table(cv)
     assert tbl["MAE"].is_monotonic_increasing

@@ -6,28 +6,89 @@ import numpy as np
 import pandas as pd
 
 from .config import Settings
-from .metrics import safe_div
 
 # Left-to-right: identity -> scoring -> value -> consistency -> volume ->
 # efficiency -> raw box score. Freeze the first dozen in Sheets.
 BOARD_COLS: tuple[str, ...] = (
-    "rank_ppr", "player_name", "position", "pos_label", "team", "teams",
-    "games", "games_active",
-    "points_ppr", "ppg_ppr", "points_half", "ppg_half", "points_std", "ppg_std",
-    "rank_ppg", "pos_rank", "pos_rank_ppg", "rank_delta", "rank_half", "rank_std",
-    "vor_ppg", "vorp_total", "tier",
-    "floor", "ceiling", "median_week", "stdev", "cv", "best_week", "worst_week",
-    "boom_weeks", "boom_rate", "bust_weeks", "bust_rate",
-    "starter_weeks", "starter_week_rate", "top5_weeks", "best_pos_finish",
-    "touches", "touch_pg", "opportunities", "opp_pg", "target_share",
-    "scrim_yards", "scrim_yds_pg", "total_yards", "total_tds", "tds_pg",
-    "first_downs", "turnovers", "fumbles_lost", "two_pt",
-    "pts_per_touch", "pts_per_opp", "yards_per_touch", "ypc", "ypr", "ypt",
-    "catch_rate", "td_rate", "adot", "yac_per_rec",
-    "completions", "attempts", "passing_yards", "passing_tds", "interceptions",
-    "comp_pct", "ypa", "air_yards_pa", "td_int_ratio", "sack_rate",
-    "carries", "rushing_yards", "rushing_tds",
-    "targets", "receptions", "receiving_yards", "receiving_tds",
+    "rank_ppr",
+    "player_name",
+    "position",
+    "pos_label",
+    "team",
+    "teams",
+    "games",
+    "games_active",
+    "points_ppr",
+    "ppg_ppr",
+    "points_half",
+    "ppg_half",
+    "points_std",
+    "ppg_std",
+    "rank_ppg",
+    "pos_rank",
+    "pos_rank_ppg",
+    "rank_delta",
+    "rank_half",
+    "rank_std",
+    "vor_ppg",
+    "vorp_total",
+    "tier",
+    "floor",
+    "ceiling",
+    "median_week",
+    "stdev",
+    "cv",
+    "best_week",
+    "worst_week",
+    "boom_weeks",
+    "boom_rate",
+    "bust_weeks",
+    "bust_rate",
+    "starter_weeks",
+    "starter_week_rate",
+    "top5_weeks",
+    "best_pos_finish",
+    "touches",
+    "touch_pg",
+    "opportunities",
+    "opp_pg",
+    "target_share",
+    "scrim_yards",
+    "scrim_yds_pg",
+    "total_yards",
+    "total_tds",
+    "tds_pg",
+    "first_downs",
+    "turnovers",
+    "fumbles_lost",
+    "two_pt",
+    "pts_per_touch",
+    "pts_per_opp",
+    "yards_per_touch",
+    "ypc",
+    "ypr",
+    "ypt",
+    "catch_rate",
+    "td_rate",
+    "adot",
+    "yac_per_rec",
+    "completions",
+    "attempts",
+    "passing_yards",
+    "passing_tds",
+    "interceptions",
+    "comp_pct",
+    "ypa",
+    "air_yards_pa",
+    "td_int_ratio",
+    "sack_rate",
+    "carries",
+    "rushing_yards",
+    "rushing_tds",
+    "targets",
+    "receptions",
+    "receiving_yards",
+    "receiving_tds",
 )
 
 
@@ -61,8 +122,8 @@ def replacement_levels(df: pd.DataFrame, settings: Settings) -> dict[str, float]
     for pos, rank in settings.replacement_rank.items():
         pool = (
             df.loc[qualified & (df["position"] == pos), "ppg_ppr"]
-              .dropna()
-              .sort_values(ascending=False)
+            .dropna()
+            .sort_values(ascending=False)
         )
         if len(pool) >= rank:
             levels[pos] = float(pool.iloc[rank - 1])
@@ -123,11 +184,7 @@ def position_board(overall: pd.DataFrame, position: str, size: int | None = None
 
 
 def flex_board(overall: pd.DataFrame, size: int = 200) -> pd.DataFrame:
-    out = (
-        overall[overall["position"].isin(["RB", "WR", "TE"])]
-        .head(size)
-        .reset_index(drop=True)
-    )
+    out = overall[overall["position"].isin(["RB", "WR", "TE"])].head(size).reset_index(drop=True)
     out.insert(0, "flex_rank", np.arange(1, len(out) + 1))
     return out
 
@@ -136,13 +193,21 @@ def value_gainers(df: pd.DataFrame, settings: Settings, n: int = 20) -> pd.DataF
     """Players whose per-game production ran well ahead of their season finish."""
     qualified = (df["games"] >= settings.min_games) & (df["games"] < 15) & (df["ppg_ppr"] >= 10)
     cols = [
-        "player_name", "pos_label", "team", "games", "points_ppr",
-        "rank_ppr", "ppg_ppr", "rank_ppg", "rank_delta",
+        "player_name",
+        "pos_label",
+        "team",
+        "games",
+        "points_ppr",
+        "rank_ppr",
+        "ppg_ppr",
+        "rank_ppg",
+        "rank_delta",
     ]
     cols = [c for c in cols if c in df.columns]
     return (
-        df[qualified].sort_values("rank_delta", ascending=False)
-                     .head(n)
-                     .loc[:, cols]
-                     .reset_index(drop=True)
+        df[qualified]
+        .sort_values("rank_delta", ascending=False)
+        .head(n)
+        .loc[:, cols]
+        .reset_index(drop=True)
     )

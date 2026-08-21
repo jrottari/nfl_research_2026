@@ -50,9 +50,9 @@ def build_weekly_panel(
     g = df.groupby(["player_id", "season"], sort=False)
 
     # --- Rolling PPR features ------------------------------------------------
-    df["ppr_lag1"]       = g["fantasy_points_ppr"].shift(1)
-    df["ppr_ma3"]        = g["fantasy_points_ppr"].apply(lambda s: _rolling_within(s, 3)).values
-    df["ppr_ma5"]        = g["fantasy_points_ppr"].apply(lambda s: _rolling_within(s, 5)).values
+    df["ppr_lag1"] = g["fantasy_points_ppr"].shift(1)
+    df["ppr_ma3"] = g["fantasy_points_ppr"].apply(lambda s: _rolling_within(s, 3)).values
+    df["ppr_ma5"] = g["fantasy_points_ppr"].apply(lambda s: _rolling_within(s, 5)).values
     df["ppr_season_avg"] = g["fantasy_points_ppr"].apply(lambda s: _rolling_within(s, 17)).values
 
     # --- Rolling volume features ---------------------------------------------
@@ -77,12 +77,12 @@ def build_weekly_panel(
         df["target_share_ma3"] = float("nan")
 
     # --- Momentum / trend ----------------------------------------------------
-    df["ppr_trend"] = df["ppr_lag1"] - df["ppr_ma3"]   # last game vs recent average
+    df["ppr_trend"] = df["ppr_lag1"] - df["ppr_ma3"]  # last game vs recent average
 
     # --- Context features ----------------------------------------------------
     df["games_played"] = g.cumcount()  # 0 = first game (no history yet)
-    df["pos_code"]     = df["position"].map(POSITION_CODES).fillna(-1).astype(int)
-    df["week_norm"]    = (df["week"] - 1) / 16.0  # 0..1 normalised week number
+    df["pos_code"] = df["position"].map(POSITION_CODES).fillna(-1).astype(int)
+    df["week_norm"] = (df["week"] - 1) / 16.0  # 0..1 normalised week number
 
     # --- Opponent matchup ----------------------------------------------------
     if defense_df is not None and not defense_df.empty and "opponent" in df.columns:
@@ -96,13 +96,17 @@ def build_weekly_panel(
 
     # --- Prior-season features -----------------------------------------------
     if prior_season_df is not None and not prior_season_df.empty:
-        ps = prior_season_df[["player_id", "season", "fantasy_points_ppr", "games", "ppg_ppr"]].copy()
-        ps = ps.rename(columns={
-            "season": "prior_season",
-            "fantasy_points_ppr": "prior_season_total",
-            "games": "prior_season_games",
-            "ppg_ppr": "prior_season_ppg",
-        })
+        ps = prior_season_df[
+            ["player_id", "season", "fantasy_points_ppr", "games", "ppg_ppr"]
+        ].copy()
+        ps = ps.rename(
+            columns={
+                "season": "prior_season",
+                "fantasy_points_ppr": "prior_season_total",
+                "games": "prior_season_games",
+                "ppg_ppr": "prior_season_ppg",
+            }
+        )
         # Join on player + (this_season - 1 == prior_season)
         df["prior_season_key"] = df["season"].astype(int) - 1
         df = df.merge(
@@ -112,7 +116,7 @@ def build_weekly_panel(
         )
         df = df.drop(columns=["prior_season_key"])
     else:
-        df["prior_season_ppg"]   = float("nan")
+        df["prior_season_ppg"] = float("nan")
         df["prior_season_games"] = float("nan")
 
     # --- Target column -------------------------------------------------------
@@ -167,9 +171,9 @@ def make_upcoming_row(
     (weeks before ``upcoming_week``), already standardized and coerced.
     """
     hist = weekly_history[
-        (weekly_history["player_id"] == player_id) &
-        (weekly_history["season"] == upcoming_season) &
-        (weekly_history["week"] < upcoming_week)
+        (weekly_history["player_id"] == player_id)
+        & (weekly_history["season"] == upcoming_season)
+        & (weekly_history["week"] < upcoming_week)
     ].sort_values("week")
 
     if hist.empty:
@@ -183,31 +187,31 @@ def make_upcoming_row(
 
     ppr_vals = hist[ppr_col].values
     last = float(ppr_vals[-1]) if len(ppr_vals) else 0.0
-    ma3  = float(np.mean(ppr_vals[-3:])) if len(ppr_vals) else 0.0
-    ma5  = float(np.mean(ppr_vals[-5:])) if len(ppr_vals) else 0.0
-    avg  = float(np.mean(ppr_vals))      if len(ppr_vals) else 0.0
+    ma3 = float(np.mean(ppr_vals[-3:])) if len(ppr_vals) else 0.0
+    ma5 = float(np.mean(ppr_vals[-5:])) if len(ppr_vals) else 0.0
+    avg = float(np.mean(ppr_vals)) if len(ppr_vals) else 0.0
 
     row: dict = {
-        "player_id":         player_id,
-        "player_name":       hist["player_name"].iloc[-1] if "player_name" in hist.columns else player_id,
-        "position":          hist["position"].iloc[-1]    if "position"    in hist.columns else "UNK",
-        "season":            upcoming_season,
-        "week":              upcoming_week,
-        "ppr_lag1":          last,
-        "ppr_ma3":           ma3,
-        "ppr_ma5":           ma5,
-        "ppr_season_avg":    avg,
-        "targets_ma3":       safe_ma("targets", 3),
-        "carries_ma3":       safe_ma("carries", 3),
-        "receptions_ma3":    safe_ma("receptions", 3),
-        "target_share_ma3":  safe_ma("target_share", 3),
-        "ppr_trend":         last - ma3,
-        "games_played":      len(hist),
-        "week_norm":         (upcoming_week - 1) / 16.0,
-        "pos_code":          POSITION_CODES.get(
+        "player_id": player_id,
+        "player_name": hist["player_name"].iloc[-1] if "player_name" in hist.columns else player_id,
+        "position": hist["position"].iloc[-1] if "position" in hist.columns else "UNK",
+        "season": upcoming_season,
+        "week": upcoming_week,
+        "ppr_lag1": last,
+        "ppr_ma3": ma3,
+        "ppr_ma5": ma5,
+        "ppr_season_avg": avg,
+        "targets_ma3": safe_ma("targets", 3),
+        "carries_ma3": safe_ma("carries", 3),
+        "receptions_ma3": safe_ma("receptions", 3),
+        "target_share_ma3": safe_ma("target_share", 3),
+        "ppr_trend": last - ma3,
+        "games_played": len(hist),
+        "week_norm": (upcoming_week - 1) / 16.0,
+        "pos_code": POSITION_CODES.get(
             hist["position"].iloc[-1] if "position" in hist.columns else "UNK", -1
         ),
-        "prior_season_ppg":   prior_season_ppg   if prior_season_ppg   is not None else 0.0,
+        "prior_season_ppg": prior_season_ppg if prior_season_ppg is not None else 0.0,
         "prior_season_games": prior_season_games if prior_season_games is not None else 0.0,
     }
 
@@ -215,12 +219,14 @@ def make_upcoming_row(
     if defense_df is not None and opponent is not None and not defense_df.empty:
         pos = row["position"]
         opp_row = defense_df[
-            (defense_df["def_team"] == opponent) &
-            (defense_df["season"] == upcoming_season) &
-            (defense_df["week"] == upcoming_week) &
-            (defense_df["position"] == pos)
+            (defense_df["def_team"] == opponent)
+            & (defense_df["season"] == upcoming_season)
+            & (defense_df["week"] == upcoming_week)
+            & (defense_df["position"] == pos)
         ]
-        row["opp_ppr_allowed_avg"] = float(opp_row["opp_ppr_allowed_avg"].values[0]) if not opp_row.empty else 0.0
+        row["opp_ppr_allowed_avg"] = (
+            float(opp_row["opp_ppr_allowed_avg"].values[0]) if not opp_row.empty else 0.0
+        )
     else:
         row["opp_ppr_allowed_avg"] = 0.0
 

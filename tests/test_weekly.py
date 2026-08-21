@@ -12,20 +12,28 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from fake_nflverse import make_season_totals, make_weekly
+from fake_nflverse import make_weekly
 
 from nfl_research import schema
-from nfl_research.weekly.data import defense_vs_position
-from nfl_research.weekly.evaluate import weekly_summary_table, boom_bust_accuracy
-from nfl_research.weekly.features import build_weekly_panel, weekly_feature_matrix, weekly_feature_cols
-from nfl_research.weekly.models import (
-    RollingMeanModel, SeasonAvgModel, WeightedRollingModel,
-    OpponentAdjustedModel, RidgeWeeklyModel, _XGB_AVAILABLE,
-)
 from nfl_research.weekly.cv import walk_forward_weekly_cv
-
+from nfl_research.weekly.data import defense_vs_position
+from nfl_research.weekly.evaluate import boom_bust_accuracy, weekly_summary_table
+from nfl_research.weekly.features import (
+    build_weekly_panel,
+    weekly_feature_cols,
+    weekly_feature_matrix,
+)
+from nfl_research.weekly.models import (
+    _XGB_AVAILABLE,
+    OpponentAdjustedModel,
+    RidgeWeeklyModel,
+    RollingMeanModel,
+    SeasonAvgModel,
+    WeightedRollingModel,
+)
 
 # ---- Synthetic data --------------------------------------------------------
+
 
 def _make_weekly_std(season: int, n_players: int = 150, seed: int = 0) -> pd.DataFrame:
     raw = make_weekly(season=season, n_players=n_players, seed=seed + season)
@@ -54,6 +62,7 @@ def weekly_panel(multi_weekly, defense_table):
 
 # ---- defense_vs_position ---------------------------------------------------
 
+
 def test_defense_table_has_expected_columns(defense_table):
     for col in ("def_team", "season", "week", "position", "opp_ppr_allowed_avg"):
         assert col in defense_table.columns
@@ -66,6 +75,7 @@ def test_defense_table_no_future_leakage(defense_table):
 
 
 # ---- build_weekly_panel ----------------------------------------------------
+
 
 def test_panel_has_rolling_features(weekly_panel):
     for col in ("ppr_lag1", "ppr_ma3", "ppr_season_avg", "games_played"):
@@ -94,10 +104,11 @@ def test_weekly_feature_cols_consistent(weekly_panel):
 
 # ---- Individual models -----------------------------------------------------
 
+
 @pytest.fixture(scope="module")
 def train_test_weekly(weekly_panel):
     train = weekly_panel[weekly_panel["season"] < 2023].copy()
-    test  = weekly_panel[weekly_panel["season"] == 2023].copy()
+    test = weekly_panel[weekly_panel["season"] == 2023].copy()
     return train, test
 
 
@@ -144,6 +155,7 @@ def test_ridge_weekly_nonnegative(train_test_weekly):
 @pytest.mark.skipif(not _XGB_AVAILABLE, reason="xgboost not installed")
 def test_xgboost_weekly_runs(train_test_weekly):
     from nfl_research.weekly.models import XGBoostWeeklyModel
+
     train, test = train_test_weekly
     preds = _fit_predict_weekly(XGBoostWeeklyModel(n_estimators=20), train, test)
     assert len(preds) == len(test)
@@ -152,11 +164,17 @@ def test_xgboost_weekly_runs(train_test_weekly):
 
 # ---- Walk-forward CV -------------------------------------------------------
 
+
 def test_weekly_cv_returns_dataframe(weekly_panel):
     models = [RollingMeanModel(n=3), SeasonAvgModel()]
     cv = walk_forward_weekly_cv(
-        weekly_panel, models, eval_seasons=[2023],
-        top_n_filter=50, min_prior_games=1, min_train_rows=10, verbose=False,
+        weekly_panel,
+        models,
+        eval_seasons=[2023],
+        top_n_filter=50,
+        min_prior_games=1,
+        min_train_rows=10,
+        verbose=False,
     )
     assert isinstance(cv, pd.DataFrame)
     assert "abs_error" in cv.columns
@@ -165,8 +183,13 @@ def test_weekly_cv_returns_dataframe(weekly_panel):
 def test_weekly_cv_abs_error_nonnegative(weekly_panel):
     models = [RollingMeanModel(n=3)]
     cv = walk_forward_weekly_cv(
-        weekly_panel, models, eval_seasons=[2023],
-        top_n_filter=50, min_prior_games=1, min_train_rows=10, verbose=False,
+        weekly_panel,
+        models,
+        eval_seasons=[2023],
+        top_n_filter=50,
+        min_prior_games=1,
+        min_train_rows=10,
+        verbose=False,
     )
     if not cv.empty:
         assert (cv["abs_error"] >= 0).all()
@@ -175,8 +198,13 @@ def test_weekly_cv_abs_error_nonnegative(weekly_panel):
 def test_weekly_summary_table_sorted(weekly_panel):
     models = [RollingMeanModel(n=3), SeasonAvgModel(), WeightedRollingModel()]
     cv = walk_forward_weekly_cv(
-        weekly_panel, models, eval_seasons=[2023],
-        top_n_filter=50, min_prior_games=1, min_train_rows=10, verbose=False,
+        weekly_panel,
+        models,
+        eval_seasons=[2023],
+        top_n_filter=50,
+        min_prior_games=1,
+        min_train_rows=10,
+        verbose=False,
     )
     if not cv.empty:
         tbl = weekly_summary_table(cv)
@@ -186,8 +214,13 @@ def test_weekly_summary_table_sorted(weekly_panel):
 def test_boom_bust_accuracy_has_all_models(weekly_panel):
     models = [RollingMeanModel(n=3), SeasonAvgModel()]
     cv = walk_forward_weekly_cv(
-        weekly_panel, models, eval_seasons=[2023],
-        top_n_filter=50, min_prior_games=1, min_train_rows=10, verbose=False,
+        weekly_panel,
+        models,
+        eval_seasons=[2023],
+        top_n_filter=50,
+        min_prior_games=1,
+        min_train_rows=10,
+        verbose=False,
     )
     if not cv.empty:
         bb = boom_bust_accuracy(cv)

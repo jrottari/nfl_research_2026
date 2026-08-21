@@ -36,16 +36,16 @@ def build_season(
     # across schema versions - and we want games_active and mean target share
     # regardless, so derive from the weekly frame either way.
     per_player = metrics.games_played(weekly)
-    season = season.drop(columns=[c for c in per_player.columns if c != "player_id"],
-                         errors="ignore")
+    season = season.drop(
+        columns=[c for c in per_player.columns if c != "player_id"], errors="ignore"
+    )
     season = season.merge(per_player, on="player_id", how="inner")
 
     season = metrics.add_scoring(season)
     season = metrics.add_volume(season)
     season = metrics.add_efficiency(season)
 
-    season = season.merge(metrics.weekly_consistency(weekly, settings),
-                          on="player_id", how="left")
+    season = season.merge(metrics.weekly_consistency(weekly, settings), on="player_id", how="left")
     season = metrics.add_consistency_rates(season)
 
     season = rankings.add_ranks(season, settings)
@@ -68,8 +68,11 @@ def build_season(
 
     boards["replacement"] = pd.DataFrame(
         [
-            {"position": pos, "replacement_rank": settings.replacement_rank[pos],
-             "replacement_ppg": ppg}
+            {
+                "position": pos,
+                "replacement_rank": settings.replacement_rank[pos],
+                "replacement_ppg": ppg,
+            }
             for pos, ppg in rankings.replacement_levels(season, settings).items()
         ]
     )

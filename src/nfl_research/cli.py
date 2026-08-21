@@ -1,6 +1,6 @@
 """Command-line entry point.
 
-    python -m nfl_research --season 2025 --top-n 250 --out ~/Desktop/fantasy_2025
+python -m nfl_research --season 2025 --top-n 250 --out ~/Desktop/fantasy_2025
 """
 
 from __future__ import annotations
@@ -18,20 +18,30 @@ def build_parser() -> argparse.ArgumentParser:
         description="Build season-end fantasy football boards from nflverse data.",
     )
     parser.add_argument("--season", type=int, default=2025, help="season to analyze")
-    parser.add_argument("--top-n", type=int, default=250,
-                        help="size of the overall PPR board (default: 250)")
-    parser.add_argument("--min-games", type=int, default=4,
-                        help="minimum games to qualify for per-game ranks")
-    parser.add_argument("--out", type=Path, default=None,
-                        help="export folder (default: data/exports)")
-    parser.add_argument("--positions", nargs="+", default=None,
-                        help="positions to include (default: QB RB WR TE FB)")
-    parser.add_argument("--only", nargs="+", default=None,
-                        help="export only these filenames")
-    parser.add_argument("--no-export", action="store_true",
-                        help="build and summarize without writing CSVs")
-    parser.add_argument("--parquet", action="store_true",
-                        help="also cache the full board to data/processed as parquet")
+    parser.add_argument(
+        "--top-n", type=int, default=250, help="size of the overall PPR board (default: 250)"
+    )
+    parser.add_argument(
+        "--min-games", type=int, default=4, help="minimum games to qualify for per-game ranks"
+    )
+    parser.add_argument(
+        "--out", type=Path, default=None, help="export folder (default: data/exports)"
+    )
+    parser.add_argument(
+        "--positions",
+        nargs="+",
+        default=None,
+        help="positions to include (default: QB RB WR TE FB)",
+    )
+    parser.add_argument("--only", nargs="+", default=None, help="export only these filenames")
+    parser.add_argument(
+        "--no-export", action="store_true", help="build and summarize without writing CSVs"
+    )
+    parser.add_argument(
+        "--parquet",
+        action="store_true",
+        help="also cache the full board to data/processed as parquet",
+    )
     return parser
 
 

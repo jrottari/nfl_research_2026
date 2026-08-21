@@ -13,10 +13,8 @@ This mirrors real in-season decisions: you know everything through last week.
 
 from __future__ import annotations
 
-import time
 import warnings
 
-import numpy as np
 import pandas as pd
 
 from .features import weekly_feature_matrix
@@ -55,30 +53,25 @@ def walk_forward_weekly_cv(
         # Who was top-N last full season?
         if top_n_filter > 0:
             prior = panel[panel["season"] == prior_season].copy()
-            prior_totals = (
-                prior.groupby("player_id")["target"].sum()
-                .nlargest(top_n_filter)
-            )
+            prior_totals = prior.groupby("player_id")["target"].sum().nlargest(top_n_filter)
             eligible_ids = set(prior_totals.index)
         else:
             eligible_ids = set(panel["player_id"].unique())
 
-        eval_weeks = sorted(
-            panel[panel["season"] == eval_season]["week"].dropna().unique()
-        )
+        eval_weeks = sorted(panel[panel["season"] == eval_season]["week"].dropna().unique())
 
         for week in eval_weeks:
             # Training: all prior seasons + current season up to week-1
-            train_prior   = panel[panel["season"] < eval_season]
+            train_prior = panel[panel["season"] < eval_season]
             train_current = panel[(panel["season"] == eval_season) & (panel["week"] < week)]
             train = pd.concat([train_prior, train_current], ignore_index=True)
 
             # Test: current season, this week, eligible players with enough history
             test = panel[
-                (panel["season"] == eval_season) &
-                (panel["week"] == week) &
-                (panel["player_id"].isin(eligible_ids)) &
-                (panel["games_played"] >= min_prior_games)
+                (panel["season"] == eval_season)
+                & (panel["week"] == week)
+                & (panel["player_id"].isin(eligible_ids))
+                & (panel["games_played"] >= min_prior_games)
             ].copy()
 
             if len(train) < min_train_rows or test.empty:
@@ -86,11 +79,10 @@ def walk_forward_weekly_cv(
 
             X_train = weekly_feature_matrix(train)
             y_train = train["target"]
-            X_test  = weekly_feature_matrix(test)
-            y_test  = test["target"]
+            X_test = weekly_feature_matrix(test)
+            y_test = test["target"]
 
             for model in models:
-                t0 = time.time()
                 try:
                     with warnings.catch_warnings():
                         warnings.simplefilter("ignore")
@@ -104,29 +96,41 @@ def walk_forward_weekly_cv(
                 baseline = X_test["ppr_ma3"].fillna(X_test["ppr_lag1"].fillna(0)).values
 
                 for i, (_, row) in enumerate(test.iterrows()):
-                    all_rows.append({
-                        "model":       model.name,
-                        "eval_season": eval_season,
-                        "week":        int(week),
-                        "player_id":   row["player_id"],
-                        "player_name": row.get("player_name", ""),
-                        "position":    row.get("position", ""),
-                        "actual":      float(y_test.iloc[i]),
-                        "predicted":   float(preds[i]),
-                        "baseline":    float(baseline[i]),
-                    })
+                    all_rows.append(
+                        {
+                            "model": model.name,
+                            "eval_season": eval_season,
+                            "week": int(week),
+                            "player_id": row["player_id"],
+                            "player_name": row.get("player_name", ""),
+                            "position": row.get("position", ""),
+                            "actual": float(y_test.iloc[i]),
+                            "predicted": float(preds[i]),
+                            "baseline": float(baseline[i]),
+                        }
+                    )
 
             if verbose and week % 4 == 0:
-                n_models = len({r["model"] for r in all_rows if r["eval_season"] == eval_season and r["week"] == week})
-                print(f"  [{eval_season} wk{week:02d}]  train={len(train):,}  test={len(test)}  models={n_models}")
+                n_models = len(
+                    {
+                        r["model"]
+                        for r in all_rows
+                        if r["eval_season"] == eval_season and r["week"] == week
+                    }
+                )
+                progress = (
+                    f"  [{eval_season} wk{week:02d}]  train={len(train):,}  "
+                    f"test={len(test)}  models={n_models}"
+                )
+                print(progress)
 
     if not all_rows:
         return pd.DataFrame()
 
     df = pd.DataFrame(all_rows)
-    df["error"]             = df["predicted"] - df["actual"]
-    df["abs_error"]         = df["error"].abs()
-    df["sq_error"]          = df["error"] ** 2
-    df["baseline_error"]    = df["baseline"] - df["actual"]
+    df["error"] = df["predicted"] - df["actual"]
+    df["abs_error"] = df["error"].abs()
+    df["sq_error"] = df["error"] ** 2
+    df["baseline_error"] = df["baseline"] - df["actual"]
     df["baseline_abs_error"] = df["baseline_error"].abs()
     return df

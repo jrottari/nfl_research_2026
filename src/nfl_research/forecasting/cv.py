@@ -17,13 +17,13 @@ from __future__ import annotations
 
 import time
 import warnings
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
 
 from .data import top_n_in_season
-from .features import feature_cols, feature_matrix
+from .features import feature_matrix
 
 
 @dataclass
@@ -47,7 +47,7 @@ def _filter_train_to_top_n(train: pd.DataFrame, n: int) -> pd.DataFrame:
     population we want the model to learn from.
     """
     parts = []
-    for season, group in train.groupby("season", sort=False):
+    for _season, group in train.groupby("season", sort=False):
         top = group.nlargest(n, "points_ppr_lag1")
         parts.append(top)
     return pd.concat(parts, ignore_index=True) if parts else train.iloc[:0]
@@ -104,7 +104,9 @@ def walk_forward_cv(
         if top_n_filter > 0:
             prior_season = eval_season - 1
             top_ids = top_n_in_season(
-                panel[["player_id", "season", "target"]].rename(columns={"target": "fantasy_points_ppr"}),
+                panel[["player_id", "season", "target"]].rename(
+                    columns={"target": "fantasy_points_ppr"}
+                ),
                 prior_season,
                 n=top_n_filter,
             )
@@ -123,8 +125,7 @@ def walk_forward_cv(
         y_test = test["target"]
 
         if verbose:
-            print(f"\n[{eval_season}]  train rows: {len(train)}  "
-                  f"test players: {len(test)}")
+            print(f"\n[{eval_season}]  train rows: {len(train)}  test players: {len(test)}")
 
         for model in models:
             t0 = time.time()
@@ -145,17 +146,19 @@ def walk_forward_cv(
 
             lag1_vals = X_test["points_ppr_lag1"].fillna(0).values
 
-            for i, (idx, row) in enumerate(test.iterrows()):
-                all_rows.append({
-                    "model": model.name,
-                    "eval_season": eval_season,
-                    "player_id": row["player_id"],
-                    "player_name": row.get("player_name", ""),
-                    "position": row.get("position", ""),
-                    "actual": float(y_test.iloc[i]),
-                    "predicted": float(preds[i]),
-                    "lag1": float(lag1_vals[i]),
-                })
+            for i, (_idx, row) in enumerate(test.iterrows()):
+                all_rows.append(
+                    {
+                        "model": model.name,
+                        "eval_season": eval_season,
+                        "player_id": row["player_id"],
+                        "player_name": row.get("player_name", ""),
+                        "position": row.get("position", ""),
+                        "actual": float(y_test.iloc[i]),
+                        "predicted": float(preds[i]),
+                        "lag1": float(lag1_vals[i]),
+                    }
+                )
 
     if not all_rows:
         return pd.DataFrame()
