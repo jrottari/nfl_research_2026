@@ -23,6 +23,9 @@ notebook = [
 bayes = [
     "pymc>=5.0",          # hierarchical Bayesian model
 ]
+legacy = [
+    "statsmodels>=0.14",  # ETS time-series models for legacy analysis
+]
 dev = [
     "pytest>=8.0",
     "ruff>=0.6",
