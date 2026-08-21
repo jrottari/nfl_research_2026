@@ -80,7 +80,7 @@ def main(argv=None):
 
     print("Building weekly panel with rolling features...")
     panel = build_weekly_panel(weekly, defense_df=defense_df, prior_season_df=season_df)
-    print(f"  {len(panel):,} panel rows (≥1 prior game)")
+    print(f"  {len(panel):,} panel rows (>=1 prior game)")
 
     models = WEEKLY_MODELS()
     if args.no_xgb:

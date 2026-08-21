@@ -81,6 +81,6 @@ def print_weekly_report(cv: pd.DataFrame) -> None:
     print(weekly_summary_table(cv).to_string(index=False))
     print("\nPOSITION BREAKDOWN (MAE):")
     print(weekly_position_breakdown(cv).to_string(index=False))
-    print("\nBOOM WEEK DETECTION (≥20 PPR):")
+    print("\nBOOM WEEK DETECTION (>=20 PPR):")
     print(boom_bust_accuracy(cv).to_string(index=False))
     print("=" * 65)
