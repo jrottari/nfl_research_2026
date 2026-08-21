@@ -5,6 +5,7 @@ from __future__ import annotations
 import pandas as pd
 
 from .. import schema
+from ..forecasting.source_cache import CACHE_DIR
 
 FORECAST_POSITIONS = ("QB", "RB", "WR", "TE")
 
@@ -26,6 +27,25 @@ def _to_pandas(df) -> pd.DataFrame:
     raise TypeError(f"Cannot convert {type(df)}")
 
 
+def _cached_weekly_seasons() -> pd.DataFrame:
+    """Concat every ``raw_player_weekly_*.parquet`` found in the shared source cache.
+
+    These are raw (pre-``schema.standardize``) frames written by
+    ``forecasting.source_cache.cached_loader`` — same shape ``load_player_stats``
+    would return, so they can be concatenated with a fresh network pull before
+    standardizing.
+    """
+    frames = []
+    for path in sorted(CACHE_DIR.glob("raw_player_weekly_*.parquet")):
+        try:
+            frames.append(pd.read_parquet(path))
+        except Exception:
+            continue
+    if not frames:
+        return pd.DataFrame()
+    return pd.concat(frames, ignore_index=True, sort=False)
+
+
 def load_multi_season_weekly(
     seasons: list[int],
     positions: tuple[str, ...] = FORECAST_POSITIONS,
@@ -33,11 +53,40 @@ def load_multi_season_weekly(
 ) -> pd.DataFrame:
     """Weekly game-level stats for multiple seasons, standardized to canonical columns.
 
+    Seasons already present in the local source cache (``data/cache/raw_player_weekly_*.parquet``)
+    are read from disk; any remaining seasons (typically the in-progress current season) are
+    fetched live via nflreadpy. This makes CV/backtests reproducible offline while still pulling
+    fresh data for the season actually being played.
+
     Returns one row per (player_id, season, week) for regular-season games only
     (unless season_type is overridden).
     """
-    nfl = _import_nflreadpy()
-    raw = _to_pandas(nfl.load_player_stats(seasons, summary_level="week"))
+    cached = _cached_weekly_seasons()
+    have_seasons: set[int] = set()
+    frames = []
+
+    if not cached.empty and "season" in cached.columns:
+        cached_seasons = pd.to_numeric(cached["season"], errors="coerce")
+        have_seasons = set(cached_seasons.dropna().astype(int).unique())
+        hit = cached[cached_seasons.isin(seasons)]
+        if not hit.empty:
+            frames.append(hit)
+
+    missing = [s for s in seasons if s not in have_seasons]
+    if missing:
+        nfl = _import_nflreadpy()
+        for yr in missing:
+            try:
+                frames.append(_to_pandas(nfl.load_player_stats([yr], summary_level="week")))
+            except Exception:
+                # nflverse doesn't publish a season's weekly file until that
+                # season has actually started (e.g. preseason, no games yet).
+                continue
+
+    if not frames:
+        return pd.DataFrame()
+
+    raw = pd.concat(frames, ignore_index=True, sort=False)
 
     df = schema.standardize(raw, strict=False)
     df = schema.coerce_numeric(df)
@@ -52,6 +101,10 @@ def load_multi_season_weekly(
         df = df[df["position"].isin(positions)].copy()
 
     df = df[df["season"].isin(seasons)].copy()
+
+    dedup_keys = [c for c in ("player_id", "season", "week") if c in df.columns]
+    if dedup_keys:
+        df = df.drop_duplicates(subset=dedup_keys, keep="last")
 
     return df.reset_index(drop=True)
 

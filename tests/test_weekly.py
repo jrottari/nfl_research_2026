@@ -31,6 +31,17 @@ from nfl_research.weekly.models import (
     SeasonAvgModel,
     WeightedRollingModel,
 )
+from nfl_research.weekly.variance import (
+    add_variance_features,
+    calibrate_bands,
+    coverage_check,
+    explosiveness_tercile,
+    fit_explosiveness_scaler,
+    game_log_variance_snapshot,
+    score_explosiveness,
+    validate_variance_persistence,
+    validate_variance_predicts_error,
+)
 
 # ---- Synthetic data --------------------------------------------------------
 
@@ -225,3 +236,99 @@ def test_boom_bust_accuracy_has_all_models(weekly_panel):
     if not cv.empty:
         bb = boom_bust_accuracy(cv)
         assert set(bb["Model"]) == {m.name for m in models}
+
+
+# ---- Variance / explosiveness -----------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def variance_panel(weekly_panel):
+    return add_variance_features(weekly_panel)
+
+
+def test_variance_columns_present(variance_panel):
+    for col in ("ppr_std3", "ppr_std5", "ppr_cv5", "boom_rate5", "bust_rate5", "explosiveness_score"):
+        assert col in variance_panel.columns
+
+
+def test_variance_no_leakage_first_game(weekly_panel):
+    # A player's first tracked game (games_played == 1) has at most one prior
+    # game to compute std from, so std/cv must be 0 (min_periods=2 not met).
+    panel = add_variance_features(weekly_panel)
+    first_game = panel[panel["games_played"] == 1]
+    assert (first_game["ppr_std5"] == 0.0).all()
+
+
+def test_explosiveness_score_bounded(variance_panel):
+    scores = variance_panel["explosiveness_score"].dropna()
+    assert (scores >= 0).all()
+    assert (scores <= 100).all()
+
+
+def test_explosiveness_tercile_labels(variance_panel):
+    labels = explosiveness_tercile(variance_panel)
+    assert set(labels.unique()) <= {"Low", "Medium", "High"}
+
+
+def test_game_log_variance_snapshot_shape():
+    snap = game_log_variance_snapshot([5.0, 30.0, 2.0, 28.0, 4.0], "WR")
+    assert set(snap) == {"ppr_std5", "ppr_cv5", "boom_rate5", "bust_rate5"}
+    assert snap["ppr_std5"] > 0
+    assert 0.0 <= snap["boom_rate5"] <= 1.0
+
+
+def test_game_log_variance_snapshot_handles_empty():
+    snap = game_log_variance_snapshot([], "RB")
+    assert snap["ppr_std5"] == 0.0
+    assert snap["ppr_cv5"] == 0.0
+
+
+def test_explosiveness_scaler_roundtrip(variance_panel):
+    scaler = fit_explosiveness_scaler(variance_panel, min_games_played=1)
+    row = variance_panel[variance_panel["games_played"] >= 1].iloc[0]
+    score = score_explosiveness(row["ppr_cv5"], row["boom_rate5"], row["position"], scaler)
+    assert 0.0 <= score <= 100.0
+
+
+def test_variance_persistence_returns_per_position(variance_panel):
+    result = validate_variance_persistence(variance_panel, min_games=3)
+    assert "position" in result.columns
+    assert "spearman_r" in result.columns
+
+
+def test_variance_predicts_error_merges_on_keys(variance_panel):
+    models = [RollingMeanModel(n=3), SeasonAvgModel()]
+    cv = walk_forward_weekly_cv(
+        variance_panel,
+        models,
+        eval_seasons=[2023],
+        top_n_filter=50,
+        min_prior_games=1,
+        min_train_rows=10,
+        verbose=False,
+    )
+    if not cv.empty:
+        result = validate_variance_predicts_error(cv, variance_panel)
+        assert set(result["Model"]) == {m.name for m in models}
+        assert result["N"].sum() > 0
+
+
+def test_calibrate_bands_and_coverage(variance_panel):
+    models = [RollingMeanModel(n=3)]
+    cv = walk_forward_weekly_cv(
+        variance_panel,
+        models,
+        eval_seasons=[2023],
+        top_n_filter=100,
+        min_prior_games=1,
+        min_train_rows=10,
+        verbose=False,
+    )
+    if cv.empty:
+        return
+    bands = calibrate_bands(cv, variance_panel)
+    assert {"tercile", "n", "floor_offset", "ceiling_offset"} <= set(bands.columns)
+    assert (bands["floor_offset"] <= bands["ceiling_offset"]).all()
+
+    coverage = coverage_check(cv, variance_panel, bands)
+    assert 0.0 <= coverage <= 1.0

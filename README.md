@@ -51,6 +51,25 @@ python -m nfl_research --only 2025_overall_top250_ppr.csv --parquet
 
 Or open `notebooks/01_season_review_2025.ipynb` for the same pipeline with charts and tables.
 
+### Weekly lineup helper (in-season start/sit)
+
+```bash
+# Auto-detects season + next unplayed week, exports a lineup board
+python scripts/weekly_lineup.py
+
+# Head-to-head start/sit call
+python scripts/weekly_lineup.py --compare "Bijan Robinson" "James Cook"
+```
+
+Trains Ridge (the walk-forward CV winner — see `reports/weekly_forecast_report.md`)
+on 2021→current-season weekly data and projects the next week for every rostered
+player, with a floor/ceiling band and an `explosiveness_score` (0-100) so two
+players with the same median projection can still be told apart by risk. Week-1 /
+zero-game players fall back to last season's per-game average, tagged
+`prior_season_only` — for a real preseason board use `scripts/run_2026_tier1_forecast.py`
+instead. Re-run `scripts/analyze_weekly_variance.py` periodically to refresh the
+floor/ceiling calibration in `data/exports/weekly_variance_bands.csv`.
+
 ## Structure
 
 ```

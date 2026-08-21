@@ -108,6 +108,13 @@ def main(argv=None):
     best_name = tbl.iloc[0]["Model"]
     print(f"\nBest weekly model: {best_name}")
 
+    if not args.no_export:
+        out_dir = (args.out.parent if args.out else EXPORT_DIR)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        cv_path = out_dir / "weekly_cv_results.csv"
+        cv.to_csv(cv_path, index=False)
+        print(f"CV results  -> {cv_path}")
+
     # ---- Retrain on all data and forecast upcoming week ---------------------
     max_week_in_data = int(panel[panel["season"] == fc_season]["week"].max()) if fc_season in panel["season"].values else 0
     forecast_week    = args.forecast_week or (max_week_in_data + 1 if max_week_in_data > 0 else 1)
@@ -182,11 +189,7 @@ def main(argv=None):
                 out_path = Path(out_path)
                 out_path.parent.mkdir(parents=True, exist_ok=True)
                 fc_out.to_csv(out_path, index=False)
-
-                cv_path = out_path.parent / f"weekly_cv_results.csv"
-                cv.to_csv(cv_path, index=False)
                 print(f"\nProjections -> {out_path}")
-                print(f"CV results  -> {cv_path}")
 
     return 0
 
