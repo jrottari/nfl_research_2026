@@ -19,7 +19,9 @@
       "Bash(git push *)",
       "Bash(.\\\\nfl_research_2026\\\\Scripts\\\\python.exe scripts/extended_research.py)",
       "PowerShell(cd \"C:\\\\Users\\\\user\\\\repos\\\\nfl_research_2026\"; $env:PYTHONIOENCODING=\"utf-8\"; .\\\\nfl_research_2026\\\\Scripts\\\\python.exe scripts\\\\extended_research.py 2>&1)",
-      "PowerShell(cd \"C:\\\\Users\\\\user\\\\repos\\\\nfl_research_2026\"; $env:PYTHONIOENCODING=\"utf-8\"; .\\\\nfl_research_2026\\\\Scripts\\\\python.exe scripts\\\\probe_rankings.py 2>&1)"
+      "PowerShell(cd \"C:\\\\Users\\\\user\\\\repos\\\\nfl_research_2026\"; $env:PYTHONIOENCODING=\"utf-8\"; .\\\\nfl_research_2026\\\\Scripts\\\\python.exe scripts\\\\probe_rankings.py 2>&1)",
+      "Bash(./nfl_research_2026/Scripts/python.exe --version)",
+      "PowerShell(Get-Process *)"
     ]
   }
 }

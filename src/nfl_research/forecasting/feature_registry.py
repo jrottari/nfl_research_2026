@@ -90,15 +90,16 @@ REGISTRY: dict[str, ColumnSpec] = {
     "poe_ppg": ColumnSpec(
         1, 2006, "load_ff_opportunity", "Points over expected per game, prior season"
     ),
-    # FantasyPros ECR preseason consensus
+    # FantasyPros ECR preseason consensus (page_type='redraft-overall' only —
+    # see tier1.build_ecr_features for why ecr_type alone is not a safe filter)
     "ecr_rank": ColumnSpec(
-        1, 2019, "load_ff_rankings", "Preseason FantasyPros Expert Consensus Rank for this season"
+        1, 2021, "load_ff_rankings", "Preseason FantasyPros Expert Consensus Rank for this season"
     ),
     "ecr_pos_rank": ColumnSpec(
-        1, 2019, "load_ff_rankings", "Preseason ECR within position (1=best at that position)"
+        1, 2021, "load_ff_rankings", "Preseason ECR within position (1=best at that position)"
     ),
     "ecr_projection": ColumnSpec(
-        1, 2019, "load_ff_rankings", "Preseason FantasyPros projected PPR points for this season"
+        1, 2021, "load_ff_rankings", "Preseason FantasyPros projected PPR points for this season"
     ),
     # Weekly usage from player stats
     "target_share_lag1": ColumnSpec(

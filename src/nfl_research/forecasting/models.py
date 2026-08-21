@@ -228,6 +228,11 @@ class RidgeModel(BaseEstimator):
     name = "ridge"
     _BASE_REQUIRED = ("points_ppr_lag1", "pos_code")
 
+    # In-fold tuning grid consumed by evaluation.tune_hyperparameters (Part 5.5):
+    # alpha is otherwise a global hardcoded constant that a wide feature matrix
+    # can easily overfit or underfit depending on tier.
+    PARAM_GRID = {"alpha": [0.1, 1.0, 10.0, 50.0, 200.0]}
+
     def __init__(self, alpha: float = 10.0, max_tier: int = 4) -> None:
         self.alpha = alpha
         self.max_tier = max_tier
@@ -311,6 +316,13 @@ class XGBoostModel(BaseEstimator):
     """
 
     name = "xgboost"
+
+    # In-fold tuning grid consumed by evaluation.tune_hyperparameters (Part 5.5).
+    PARAM_GRID = {
+        "max_depth": [3, 4, 6],
+        "learning_rate": [0.03, 0.05, 0.1],
+        "reg_lambda": [1.0, 5.0, 15.0],
+    }
 
     def __init__(
         self,
@@ -525,6 +537,7 @@ class HierarchicalBayesModel(BaseEstimator):
                     "alpha": post["alpha"].mean(("chain", "draw")).values,
                     "beta": post["beta"].mean(("chain", "draw")).values,
                     "gamma": float(post["gamma"].mean()),
+                    "sigma": float(post["sigma"].mean()),
                 }
 
         self._fitted = True
@@ -553,6 +566,19 @@ class HierarchicalBayesModel(BaseEstimator):
 
         preds = alpha_vals[pos_idx] + beta_vals[pos_idx] * lag1_c + gamma_val * ppg1
         return np.clip(preds, 0, None)
+
+    def predict_sd(self, X: pd.DataFrame) -> np.ndarray:
+        """Homoscedastic predictive sd (posterior residual sigma) for CRPS scoring.
+
+        This is only the observation-noise component of predictive uncertainty
+        (it ignores parameter uncertainty in alpha/beta), so it understates true
+        posterior predictive spread; it is still a legitimate, cheap-to-compute
+        distribution for the evaluation harness's CRPS metric.
+        """
+        if not self._fitted:
+            raise NotFittedError("Call fit() before predict_sd()")
+        sigma = float(self._map.get("sigma", 60.0))
+        return np.full(len(X), sigma)
 
     def position_params(self) -> pd.DataFrame:
         """Return fitted alpha/beta per position for inspection."""

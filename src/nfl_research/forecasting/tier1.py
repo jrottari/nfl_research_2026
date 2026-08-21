@@ -35,7 +35,7 @@ log = logging.getLogger(__name__)
 _CACHE_DIR = Path(__file__).resolve().parents[3] / "data" / "cache"
 
 FIRST_SEASON = 2006  # ff_opportunity first available
-ECR_FIRST_SEASON = 2019  # ff_rankings historical coverage
+ECR_FIRST_SEASON = 2021  # load_ff_rankings(type="all") preseason 'redraft-overall' coverage
 
 
 # ---------------------------------------------------------------------------
@@ -86,7 +86,11 @@ def _opportunity_raw(seasons: list[int]) -> pd.DataFrame:
         "total_fantasy_points_exp",
         "total_fantasy_points_diff",
     ]
-    return frame[[c for c in keep if c in frame.columns]]
+    out = frame[[c for c in keep if c in frame.columns]].copy()
+    # nflreadpy/parquet round-trips can leave `season` as a string dtype;
+    # every downstream as_of comparison assumes int.
+    out["season"] = pd.to_numeric(out["season"], errors="coerce").astype("Int64")
+    return out
 
 
 def build_opportunity_features(
@@ -119,6 +123,8 @@ def build_opportunity_features(
     except Exception as exc:
         log.warning("load_ff_opportunity failed: %s", exc)
         return panel
+
+    opp_raw["season"] = pd.to_numeric(opp_raw["season"], errors="coerce")
 
     # Filter to full prior season (weeks 1-18); as_of just ensures we're using prior year
     if as_of is not None:
@@ -207,8 +213,17 @@ def build_ecr_features(
     """Add ecr_rank and ecr_pos_rank to panel.
 
     Joins preseason redraft-overall ECR to each (player, season) pair.
-    Uses page_type 'redraft-overall' and ecr_type 'ro', scrape dates
-    June 1 – September 10 of season t (preseason window).
+    Uses page_type 'redraft-overall' (the standard 1-QB overall consensus board
+    this league format needs), scrape dates June 1 - September 10 of season t
+    (preseason window).
+
+    ``ecr_type`` alone is NOT a safe filter: FantasyPros reuses the same
+    ecr_type code ('ro') across multiple, incompatible ranking universes —
+    'redraft-overall' (what we want), but also 'redraft-idp' (individual
+    defensive players) and 'redraft-offense'. Mixing those pools before
+    ranking silently inflates ranks into the hundreds for players who are
+    actually top-10 consensus picks. ``page_type == 'redraft-overall'`` is
+    the only filter that isolates a single, internally consistent pool.
 
     Player matching: name-based (no gsis_id in ff_rankings).
     ~80-90% match rate; unmatched rows get NaN (MarketConsensusModel handles NaN).
@@ -225,11 +240,15 @@ def build_ecr_features(
     ecr_raw["month"] = ecr_raw["scrape_date"].dt.month
     ecr_raw["year"] = ecr_raw["scrape_date"].dt.year
 
-    # Preseason window: June 1 – Sep 10
-    preseason = ecr_raw[
-        (ecr_raw["month"].between(6, 9))
-        & (ecr_raw["ecr_type"].isin(["ro", "rp"]))  # redraft overall or PPR
-    ].copy()
+    # Preseason window: June 1 - Sep 10, restricted to the single 'redraft-overall'
+    # page_type so rank() never mixes IDP/offense-only pools into the overall board.
+    page_type_col = "page_type" if "page_type" in ecr_raw.columns else None
+    page_mask = (
+        ecr_raw[page_type_col] == "redraft-overall"
+        if page_type_col
+        else ecr_raw["ecr_type"] == "ro"
+    )
+    preseason = ecr_raw[(ecr_raw["month"].between(6, 9)) & page_mask].copy()
     preseason["season"] = preseason["year"].astype(int)
 
     # Take the latest preseason scrape per player/season
@@ -346,6 +365,8 @@ def build_weekly_features(
     except Exception as exc:
         log.warning("load_player_stats(weekly) failed: %s", exc)
         return panel
+
+    weekly["season"] = pd.to_numeric(weekly["season"], errors="coerce")
 
     # as_of: only use the prior season (t-1), so no within-season leak
     if as_of is not None:

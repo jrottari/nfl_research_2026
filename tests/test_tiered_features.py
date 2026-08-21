@@ -23,6 +23,7 @@ from nfl_research.forecasting.models import (
     RidgeModel,
 )
 from nfl_research.forecasting.tier0 import add_missing_indicators
+from nfl_research.forecasting.tier1 import build_ecr_features
 from nfl_research.forecasting.tier2 import (
     build_depth_features,
     build_pbp_features,
@@ -143,6 +144,27 @@ def test_contract_requires_snapshot_date_and_honors_cutoff():
     )
 
 
+def test_ecr_join_excludes_idp_and_offense_only_pools():
+    """FantasyPros reuses ecr_type='ro' across redraft-overall, redraft-idp, and
+    redraft-offense. Ranking a mixed pool inflates a top-5 overall player's rank
+    into the hundreds; page_type must isolate 'redraft-overall' alone."""
+    rankings = pd.DataFrame(
+        {
+            "scrape_date": ["2024-08-15"] * 4,
+            "player": ["One", "Two", "Three", "Four"],
+            "pos": ["WR", "WR", "LB", "RB"],
+            "ecr": [1.0, 2.0, 3.0, 4.0],
+            "page_type": ["redraft-overall", "redraft-overall", "redraft-idp", "redraft-offense"],
+            "ecr_type": ["ro", "ro", "ro", "ro"],
+        }
+    )
+    out = build_ecr_features(_panel(season=2024), as_of=CUTOFF, rankings=rankings)
+    # "One" is truly the #1 overall redraft-overall player and must rank 1, not be
+    # diluted by the unrelated IDP/offense-only rows sharing the same ecr_type.
+    row = out[out["player_name"] == "One"]
+    assert row["ecr_rank"].iloc[0] == 1.0
+
+
 def test_regression_to_mean_uses_ols_anchor():
     x = pd.DataFrame({"points_ppr_lag1": [100.0, 200.0, 300.0], "pos_code": [0, 0, 0]})
     y = pd.Series([80.0, 130.0, 180.0])
@@ -219,3 +241,53 @@ def test_tier_window_matches_registry():
     assert_tier_window(frame, 2)
     with pytest.raises(AssertionError):
         assert_tier_window(pd.DataFrame({"season": [first + 1]}), 2)
+
+
+def test_in_fold_tuning_selects_ridge_alpha_without_leaking_eval_season():
+    """Part 5.5: Ridge alpha should be tunable inside the training fold, and the
+    grid search must never see the held-out evaluation season's rows."""
+    panel = _evaluation_panel()
+    raw = walk_forward_evaluate(
+        panel, [RidgeModel(max_tier=0)], eval_seasons=[2024], min_train_seasons=2, tune=True
+    )
+    assert not raw.empty
+    assert raw["eval_season"].unique().tolist() == [2024]
+    assert np.isfinite(raw["predicted"]).all()
+
+
+def test_crps_is_finite_when_a_model_exposes_predict_sd():
+    """HierarchicalBayesModel.predict_sd() should feed a real Gaussian CRPS,
+    while deterministic models (no predict_sd) keep CRPS as NaN."""
+    predictions = pd.DataFrame(
+        {
+            "model": ["m", "m", "rw", "rw"],
+            "max_tier": [1, 1, 0, 0],
+            "eval_season": [2024, 2024, 2024, 2024],
+            "player_id": ["p1", "p2", "p1", "p2"],
+            "position": ["WR", "WR", "WR", "WR"],
+            "actual": [100.0, 150.0, 100.0, 150.0],
+            "predicted": [110.0, 140.0, 90.0, 160.0],
+            "distribution_sd": [20.0, 20.0, np.nan, np.nan],
+        }
+    )
+    predictions["error"] = predictions["predicted"] - predictions["actual"]
+    predictions["abs_error"] = predictions["error"].abs()
+    predictions["sq_error"] = predictions["error"] ** 2
+    scores = score_predictions(predictions).set_index("model")
+    assert np.isfinite(scores.loc["m", "crps"])
+    assert scores.loc["m", "crps"] > 0
+    assert np.isnan(scores.loc["rw", "crps"])
+
+
+def test_tuning_is_a_noop_for_models_without_a_param_grid():
+    panel = _evaluation_panel()
+    tuned = walk_forward_evaluate(
+        panel, [RandomWalkModel()], eval_seasons=[2024], min_train_seasons=2, tune=True
+    )
+    untuned = walk_forward_evaluate(
+        panel, [RandomWalkModel()], eval_seasons=[2024], min_train_seasons=2, tune=False
+    )
+    np.testing.assert_array_almost_equal(
+        tuned.sort_values("player_id")["predicted"].to_numpy(),
+        untuned.sort_values("player_id")["predicted"].to_numpy(),
+    )

@@ -25,6 +25,11 @@ def parse_args(argv=None):
     parser.add_argument("--max-tier", type=int, choices=range(5), default=4)
     parser.add_argument("--no-pbp", action="store_true", help="skip the large play-by-play source")
     parser.add_argument("--min-train-seasons", type=int, default=3)
+    parser.add_argument(
+        "--tune",
+        action="store_true",
+        help="in-fold GridSearchCV for Ridge/XGBoost hyperparameters (Part 5.5)",
+    )
     parser.add_argument("--out-dir", type=Path, default=REPO_ROOT / "data" / "processed")
     return parser.parse_args(argv)
 
@@ -54,6 +59,7 @@ def main(argv=None) -> int:
         wide,
         tiers=range(args.max_tier + 1),
         min_train_seasons=args.min_train_seasons,
+        tune=args.tune,
     )
     raw.to_csv(args.out_dir / "tiered_ablation_predictions.csv", index=False)
     scores.to_csv(args.out_dir / "tiered_ablation_scores.csv", index=False)
