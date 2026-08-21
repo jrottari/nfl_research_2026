@@ -121,7 +121,9 @@ def game_log_variance_snapshot(
     return {"ppr_std5": std, "ppr_cv5": cv, "boom_rate5": boom_rate, "bust_rate5": bust_rate}
 
 
-def fit_explosiveness_scaler(panel: pd.DataFrame, min_games_played: int = 3) -> dict[str, dict[str, np.ndarray]]:
+def fit_explosiveness_scaler(
+    panel: pd.DataFrame, min_games_played: int = 3
+) -> dict[str, dict[str, np.ndarray]]:
     """Fit per-position sorted reference distributions of cv5/boom_rate5,
     used to score a single new (cv5, boom_rate5) pair against the same
     percentile scale ``add_variance_features`` used at training time.
@@ -152,6 +154,76 @@ def score_explosiveness(
     cv_pct = np.searchsorted(ref["cv5"], cv5, side="right") / len(ref["cv5"])
     boom_pct = np.searchsorted(ref["boom_rate5"], boom_rate5, side="right") / len(ref["boom_rate5"])
     return round(50.0 * (cv_pct + boom_pct), 1)
+
+
+DEFAULT_BAND_OFFSETS = {
+    # Fallback if data/exports/weekly_variance_bands.csv hasn't been (re)generated
+    # by scripts/analyze_weekly_variance.py. Fit on real 2023-2025 walk-forward
+    # residuals; see reports/weekly_forecast_report.md for the calibration and
+    # out-of-sample coverage check (0.607 vs a 0.60 target).
+    "Low": (-5.21, 6.32),
+    "Medium": (-5.64, 5.20),
+    "High": (-6.26, 6.47),
+}
+
+
+def load_band_offsets() -> dict[str, tuple[float, float]]:
+    from ..config import EXPORT_DIR
+
+    path = EXPORT_DIR / "weekly_variance_bands.csv"
+    if not path.exists():
+        return DEFAULT_BAND_OFFSETS
+    bands_df = pd.read_csv(path)
+    return {
+        row["tercile"]: (row["floor_offset"], row["ceiling_offset"])
+        for _, row in bands_df.iterrows()
+    }
+
+
+def fit_tercile_thresholds(
+    panel: pd.DataFrame, col: str = "explosiveness_score"
+) -> dict[str, tuple[float, float]]:
+    """Fixed, per-position Low/Medium/High cutoffs for ``col``, fit once on the
+    full training panel. Applying these fixed cutoffs at inference time (rather
+    than re-quantiling a small board of a handful of players) keeps risk_tier
+    labels comparable across boards of any size, including a 12-15 player
+    fantasy roster where a position group might have only 1-2 players.
+    """
+    thresholds: dict[str, tuple[float, float]] = {}
+    for pos, grp in panel.groupby("position"):
+        q = grp[col].quantile([1 / 3, 2 / 3])
+        thresholds[pos] = (float(q.iloc[0]), float(q.iloc[1]))
+    return thresholds
+
+
+def apply_tercile(score: float, position: str, thresholds: dict[str, tuple[float, float]]) -> str:
+    lo, hi = thresholds.get(position, (33.3, 66.7))
+    if score < lo:
+        return "Low"
+    if score > hi:
+        return "High"
+    return "Medium"
+
+
+def attach_risk_bands(
+    board: pd.DataFrame,
+    thresholds: dict[str, tuple[float, float]],
+    bands: dict[str, tuple[float, float]] | None = None,
+) -> pd.DataFrame:
+    """Attach ``risk_tier``/``floor``/``ceiling`` to a projected board that already
+    has ``proj_points`` and ``explosiveness_score`` columns.
+    """
+    bands = bands or load_band_offsets()
+    out = board.copy()
+    out["risk_tier"] = [
+        apply_tercile(score, pos, thresholds)
+        for score, pos in zip(out["explosiveness_score"], out["position"], strict=True)
+    ]
+    default_offset = (-5.5, 6.5)
+    offsets = out["risk_tier"].map(lambda t: bands.get(t, default_offset))
+    out["floor"] = (out["proj_points"] + offsets.map(lambda t: t[0])).clip(lower=0).round(1)
+    out["ceiling"] = (out["proj_points"] + offsets.map(lambda t: t[1])).round(1)
+    return out
 
 
 def explosiveness_tercile(panel: pd.DataFrame, col: str = "explosiveness_score") -> pd.Series:
@@ -225,7 +297,9 @@ def validate_variance_predicts_error(cv: pd.DataFrame, panel: pd.DataFrame) -> p
     rows = []
     for name, grp in merged.groupby("model"):
         r = grp["explosiveness_score"].corr(grp["abs_error"], method="spearman")
-        rows.append({"Model": name, "N": len(grp), "Spearman(explosiveness, abs_error)": round(float(r), 3)})
+        rows.append(
+            {"Model": name, "N": len(grp), "Spearman(explosiveness, abs_error)": round(float(r), 3)}
+        )
     return pd.DataFrame(rows).sort_values("Model").reset_index(drop=True)
 
 

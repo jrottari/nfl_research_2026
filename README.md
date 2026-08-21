@@ -70,6 +70,24 @@ zero-game players fall back to last season's per-game average, tagged
 instead. Re-run `scripts/analyze_weekly_variance.py` periodically to refresh the
 floor/ceiling calibration in `data/exports/weekly_variance_bands.csv`.
 
+### Sleeper multi-league lineup optimizer
+
+```bash
+# Every NFL league you're in, next unplayed week, optimize for median points
+python scripts/sleeper_lineup.py --username YOUR_SLEEPER_USERNAME
+
+# Chasing points this week? Optimize for ceiling instead
+python scripts/sleeper_lineup.py --username YOUR_SLEEPER_USERNAME --objective ceiling --league "Dynasty Warfare"
+```
+
+Pulls every roster for a Sleeper user (public API, no auth needed), trains the
+same weekly model once, and solves the optimal starting lineup per league
+(FLEX-aware, via linear assignment) — printing a swap list against what's
+currently started and exporting `data/exports/sleeper/{season}_wk{week}_{league}.csv`.
+Only QB/RB/WR/TE are optimized; K/DEF slots pass through your actual current
+starter. League scoring is adjusted for reception value (PPR/half/standard)
+only — other custom scoring isn't modeled. See `src/nfl_research/sleeper/`.
+
 ## Structure
 
 ```

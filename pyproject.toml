@@ -13,6 +13,7 @@ dependencies = [
     "scikit-learn>=1.3",  # Ridge, Pipeline, StandardScaler
     "scipy>=1.12",        # minimize_scalar for ES alpha fitting
     "xgboost>=2.0",       # gradient boosting forecast model
+    "requests>=2.31",     # Sleeper API client
 ]
 
 [project.optional-dependencies]
