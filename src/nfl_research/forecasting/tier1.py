@@ -171,10 +171,16 @@ def build_opportunity_features(
 # ---------------------------------------------------------------------------
 
 _NAME_CLEAN = re.compile(r"[^a-z ]+")
+# FantasyPros consistently includes generational suffixes (e.g. "Patrick Mahomes II",
+# "James Cook III") that nflverse's player_name field omits, which silently dropped
+# the ECR match for every suffixed player (Mahomes, Cook, Marvin Harrison Jr., ...).
+# Stripped symmetrically since both sides of the join run through this function.
+_SUFFIX = re.compile(r"\s+(jr|sr|ii|iii|iv|v)$")
 
 
 def _normalize_name(s: str) -> str:
-    return _NAME_CLEAN.sub("", str(s).lower().strip())
+    cleaned = _NAME_CLEAN.sub("", str(s).lower().strip())
+    return _SUFFIX.sub("", cleaned).strip()
 
 
 def _ecr_raw() -> pd.DataFrame:

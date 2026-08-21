@@ -1,0 +1,710 @@
+<title>Ablation Run 0</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,500&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+<style>
+  :root {
+    color-scheme: light;
+    --paper: #edf0f0;
+    --paper-raised: #ffffff;
+    --ink: #1b232c;
+    --ink-2: #55606b;
+    --ink-3: #7c8790;
+    --line: #d7dee0;
+    --gold: #a6650a;
+    --gold-soft: #f2e5cf;
+    --series-ridge: #2a78d6;
+    --series-xgb: #eb6834;
+    --series-rw: #1baf7a;
+    --good-bg: #f2e5cf;
+    --shadow: 0 1px 2px rgba(27,35,44,0.06), 0 8px 24px -12px rgba(27,35,44,0.18);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --paper: #12161b;
+      --paper-raised: #1a2027;
+      --ink: #e7ecef;
+      --ink-2: #9aa7b0;
+      --ink-3: #6d7880;
+      --line: #2a323a;
+      --gold: #e0a83a;
+      --gold-soft: #2c2416;
+      --series-ridge: #3987e5;
+      --series-xgb: #d95926;
+      --series-rw: #199e70;
+      --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 24px -12px rgba(0,0,0,0.5);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --paper: #12161b;
+    --paper-raised: #1a2027;
+    --ink: #e7ecef;
+    --ink-2: #9aa7b0;
+    --ink-3: #6d7880;
+    --line: #2a323a;
+    --gold: #e0a83a;
+    --gold-soft: #2c2416;
+    --series-ridge: #3987e5;
+    --series-xgb: #d95926;
+    --series-rw: #199e70;
+    --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 24px -12px rgba(0,0,0,0.5);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "Public Sans", ui-sans-serif, system-ui, sans-serif;
+    font-size: 16px;
+    line-height: 1.6;
+  }
+
+  .masthead {
+    background: var(--ink);
+    color: var(--paper);
+    padding: 3.2rem 1.5rem 2.4rem;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .masthead { background: #0a0d10; }
+  }
+  :root[data-theme="dark"] .masthead { background: #0a0d10; }
+
+  .masthead-inner { max-width: 760px; margin: 0 auto; }
+  .eyebrow {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.72rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--gold);
+    margin: 0 0 0.9rem;
+  }
+  h1.title {
+    font-family: "Fraunces", Georgia, serif;
+    font-weight: 600;
+    font-size: clamp(2.2rem, 6vw, 3.2rem);
+    line-height: 1.04;
+    margin: 0 0 0.9rem;
+    text-wrap: balance;
+    color: var(--paper);
+  }
+  .dek {
+    max-width: 58ch;
+    color: #c3ccd1;
+    font-size: 1.05rem;
+    margin: 0 0 2rem;
+  }
+  .stat-strip {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0,1fr));
+    gap: 1px;
+    background: rgba(255,255,255,0.12);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .stat {
+    background: rgba(255,255,255,0.03);
+    padding: 0.9rem 1rem;
+  }
+  .stat-num {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: var(--paper);
+    font-variant-numeric: tabular-nums;
+  }
+  .stat-label {
+    font-size: 0.72rem;
+    color: #97a2a8;
+    margin-top: 0.15rem;
+  }
+
+  main { max-width: 760px; margin: 0 auto; padding: 3rem 1.5rem 5rem; }
+  .wide { max-width: 860px; margin-left: auto; margin-right: auto; }
+
+  section { margin-bottom: 3.4rem; }
+  section > .eyebrow { margin-top: 0; }
+
+  h2 {
+    font-family: "Fraunces", Georgia, serif;
+    font-weight: 600;
+    font-size: 1.6rem;
+    margin: 0 0 1rem;
+    text-wrap: balance;
+  }
+  h3 {
+    font-family: "Fraunces", Georgia, serif;
+    font-weight: 600;
+    font-size: 1.15rem;
+    margin: 2rem 0 0.7rem;
+  }
+  p { margin: 0 0 1rem; color: var(--ink); }
+  p.lede { color: var(--ink-2); }
+  strong { color: var(--ink); }
+  .accent { color: var(--gold); font-weight: 600; }
+
+  hr.rule {
+    border: none;
+    border-top: 1px solid var(--line);
+    margin: 0 0 2.4rem;
+  }
+
+  .callout {
+    background: var(--paper-raised);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--gold);
+    border-radius: 6px;
+    padding: 1.2rem 1.4rem;
+    box-shadow: var(--shadow);
+  }
+  .callout h4 {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.85rem;
+    font-weight: 600;
+    margin: 0 0 0.4rem;
+    color: var(--ink);
+  }
+  .callout + .callout { margin-top: 1rem; }
+
+  .table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--paper-raised);
+    box-shadow: var(--shadow);
+  }
+  table { border-collapse: collapse; width: 100%; font-size: 0.92rem; min-width: 560px; }
+  thead th {
+    text-align: right;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.68rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    font-weight: 600;
+    padding: 0.7rem 0.9rem;
+    border-bottom: 1px solid var(--line);
+    white-space: nowrap;
+  }
+  thead th:first-child, td.rowlabel { text-align: left; }
+  tbody td {
+    text-align: right;
+    padding: 0.55rem 0.9rem;
+    border-bottom: 1px solid var(--line);
+    font-family: "IBM Plex Mono", monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 0.9rem;
+    color: var(--ink-2);
+    white-space: nowrap;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  td.rowlabel { font-family: "Public Sans", sans-serif; color: var(--ink); font-weight: 500; }
+  td.best { color: var(--ink); font-weight: 700; position: relative; }
+  td.best::after {
+    content: "";
+    position: absolute; left: 0.5rem; right: 0.5rem; bottom: 0.32rem;
+    height: 2px; background: var(--gold); border-radius: 2px;
+  }
+  tr.control td.rowlabel { color: var(--ink-3); font-style: italic; }
+  .table-caption { font-size: 0.85rem; color: var(--ink-3); margin: 0.6rem 0 0; }
+
+  figure { margin: 1.6rem 0 0; }
+  figcaption {
+    font-size: 0.88rem;
+    color: var(--ink-2);
+    margin-top: 0.7rem;
+    max-width: 62ch;
+  }
+  .chart-card {
+    background: var(--paper-raised);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 1.3rem 1.3rem 0.8rem;
+    box-shadow: var(--shadow);
+    position: relative;
+  }
+  .legend { display: flex; gap: 1.4rem; flex-wrap: wrap; margin-bottom: 0.6rem; }
+  .legend-item { display: flex; align-items: center; gap: 0.45rem; font-size: 0.82rem; color: var(--ink-2); }
+  .legend-swatch { width: 12px; height: 12px; border-radius: 3px; flex: none; }
+  .chart-svg { width: 100%; height: auto; display: block; overflow: visible; }
+  .gridline { stroke: var(--line); stroke-width: 1; }
+  .axis-label { font-family: "IBM Plex Mono", monospace; font-size: 9px; fill: var(--ink-3); }
+  .series-line { fill: none; stroke-width: 2; }
+  .hover-dot { fill: var(--paper-raised); stroke-width: 2; }
+  .crosshair { stroke: var(--ink-3); stroke-width: 1; stroke-dasharray: 3 3; opacity: 0; }
+  .tooltip {
+    position: absolute;
+    pointer-events: none;
+    background: var(--ink);
+    color: var(--paper);
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.72rem;
+    line-height: 1.5;
+    padding: 0.5rem 0.65rem;
+    border-radius: 6px;
+    box-shadow: var(--shadow);
+    opacity: 0;
+    transition: opacity 0.08s ease;
+    z-index: 5;
+    white-space: nowrap;
+  }
+  .tt-row { display: flex; justify-content: space-between; gap: 0.8rem; }
+  .tt-swatch { width: 7px; height: 7px; border-radius: 2px; display: inline-block; margin-right: 0.35rem; }
+  .overlay-rect { fill: transparent; }
+  .bar { cursor: pointer; }
+  .bar-label { font-family: "IBM Plex Mono", monospace; font-size: 11px; font-weight: 600; fill: var(--ink); }
+  .bar-cat { font-family: "Public Sans", sans-serif; font-size: 11.5px; fill: var(--ink-2); }
+
+  .findings {
+    display: grid;
+    gap: 0.9rem;
+    margin-top: 1.2rem;
+  }
+  .finding {
+    display: grid;
+    grid-template-columns: 2.4rem 1fr;
+    gap: 0.9rem;
+    align-items: start;
+  }
+  .finding-num {
+    font-family: "IBM Plex Mono", monospace;
+    color: var(--gold);
+    font-size: 0.85rem;
+    padding-top: 0.15rem;
+  }
+
+  .internals-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.6rem; }
+  @media (max-width: 620px) { .internals-grid { grid-template-columns: 1fr; } }
+  .mini-table td, .mini-table th { padding: 0.4rem 0.6rem; }
+  .mini-table { font-size: 0.85rem; }
+
+  ul.scope-list { padding-left: 1.2rem; margin: 0; color: var(--ink-2); }
+  ul.scope-list li { margin-bottom: 0.6rem; }
+  ul.scope-list code, p code, li code {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.85em;
+    background: var(--gold-soft);
+    color: var(--ink);
+    padding: 0.08em 0.35em;
+    border-radius: 4px;
+  }
+
+  pre.repro {
+    background: var(--ink);
+    color: #d8f0e2;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.82rem;
+    padding: 1rem 1.2rem;
+    border-radius: 8px;
+    overflow-x: auto;
+    line-height: 1.7;
+  }
+  footer {
+    max-width: 760px; margin: 0 auto; padding: 0 1.5rem 3rem;
+    font-size: 0.82rem; color: var(--ink-3);
+  }
+</style>
+
+<div class="masthead">
+  <div class="masthead-inner">
+    <p class="eyebrow">Fantasy Forecasting Research &middot; NFL 1999&ndash;2025</p>
+    <h1 class="title">Ablation Run 0</h1>
+    <p class="dek">The first walk-forward pass of the tiered feature harness: eight forecasting models and a FantasyPros market-consensus benchmark, evaluated season-by-season on real, cached nflverse/ffverse data — no synthetic fixtures, no hyperparameter tuning.</p>
+    <div class="stat-strip">
+      <div class="stat"><div class="stat-num">23</div><div class="stat-label">tier&#8209;0 eval seasons</div></div>
+      <div class="stat"><div class="stat-num">9</div><div class="stat-label">models compared</div></div>
+      <div class="stat"><div class="stat-num">2</div><div class="stat-label">real bugs fixed en route</div></div>
+      <div class="stat"><div class="stat-num">35.66</div><div class="stat-label">best MAE (market consensus)</div></div>
+    </div>
+  </div>
+</div>
+
+<main>
+
+  <section>
+    <p class="eyebrow">Scope &amp; method</p>
+    <h2>What Run 0 actually measured</h2>
+    <p>Run 0 is <code>scripts/run_tiered_ablation.py --max-tier 1 --no-pbp --out-dir data/processed_tier1</code>: leak-aware walk-forward evaluation (fit on every season before <em>T</em>, predict season <em>T</em>, never a random split) across two feature tiers, using each model's hardcoded constructor defaults.</p>
+    <p><strong>Tier 0</strong> is lag/trend/age/draft-capital features on the full 1999&ndash;2025 panel &mdash; 23 held-out seasons, 2003&ndash;2025. <strong>Tier 1</strong> adds FantasyPros expert-consensus rank and ffverse opportunity/usage features, which restricts the usable panel to just 2024&ndash;2025 (that column's real coverage starts in 2021, not 2019 as originally assumed). Tiers 2&ndash;4 and in-fold hyperparameter tuning are separate, later runs and are out of scope for this report.</p>
+  </section>
+
+  <section>
+    <p class="eyebrow">Before the numbers</p>
+    <h2>Two real bugs the harness exposed</h2>
+    <div class="callout">
+      <h4>01 &middot; season column silently became a string</h4>
+      <p style="margin:0">Every <code>as_of</code> cutoff check against <code>load_ff_opportunity</code>'s <code>season</code> column raised <code>TypeError</code> — it round-trips through parquet as a string, not an int. Fixed by coercing with <code>pd.to_numeric</code> in <code>tier1.py</code>.</p>
+    </div>
+    <div class="callout">
+      <h4>02 &middot; FantasyPros ranks were drawn from a mixed pool</h4>
+      <p style="margin:0">FantasyPros reuses the <code>ecr_type='ro'</code> code across three incompatible boards &mdash; redraft-overall, redraft-IDP, and redraft-offense. Filtering on <code>ecr_type</code> alone silently blended all three, which is why the first pass of this ablation had Tom Brady's 2020 preseason rank at <strong>677</strong> and every model, including a plain random walk, "beating the market." Fixed by filtering on <code>page_type == 'redraft-overall'</code> instead (verified: McCaffrey #1 overall 2021, Jonathan Taylor #1 2022, Puka Nacua #1 2025). Both are covered by regression tests in <code>test_tiered_features.py</code>.</p>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">Tier 0 &middot; 2003&ndash;2025</p>
+    <h2>Lag history alone: Ridge and XGBoost converge</h2>
+    <p class="lede">Full 1999&ndash;2025 panel, 23 walk-forward eval seasons. Lower is better on every column but Spearman and Top-24 precision.</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th style="text-align:left">Model</th><th>MAE</th><th>RMSE</th><th>Spearman (pos)</th><th>Top-24 prec.</th><th>VORP-wtd MAE</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="rowlabel">Ridge</td><td class="best">43.87</td><td class="best">59.03</td><td class="best">0.710</td><td>0.677</td><td>83.95</td></tr>
+          <tr><td class="rowlabel">XGBoost</td><td>43.97</td><td>59.49</td><td>0.708</td><td>0.669</td><td>82.99</td></tr>
+          <tr><td class="rowlabel">Exp. smoothing</td><td>45.08</td><td>63.21</td><td>0.695</td><td>0.662</td><td class="best">72.00</td></tr>
+          <tr><td class="rowlabel">Hierarchical Bayes</td><td>45.81</td><td>61.50</td><td>0.684</td><td>0.650</td><td>90.47</td></tr>
+          <tr><td class="rowlabel">Regression to mean</td><td>45.99</td><td>61.74</td><td>0.681</td><td>0.646</td><td>91.26</td></tr>
+          <tr><td class="rowlabel">Random walk</td><td>46.99</td><td>67.09</td><td>0.681</td><td>0.646</td><td>74.59</td></tr>
+          <tr><td class="rowlabel">Position mean</td><td>70.38</td><td>86.59</td><td>&mdash;</td><td class="best">0.265</td><td>167.78</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="table-caption">No market-consensus row: FantasyPros ECR isn't part of the tier-0 feature set. Position mean's Top-24 precision looks best only because most positions have far fewer than 24 rostered players — a degenerate score, not a real signal (see <code>evaluation.py</code>'s <code>_top_k_precision</code>).</p>
+
+    <figure class="wide">
+      <div class="chart-card">
+        <div class="legend" id="legend-1"></div>
+        <svg class="chart-svg" id="chart1" viewBox="0 0 820 320" preserveAspectRatio="xMidYMid meet"></svg>
+      </div>
+      <figcaption>Per-season MAE, tier 0, 2003&ndash;2025. Ridge and XGBoost track each other within a point almost every year — gradient boosting finds no edge when every input is a transform of the same three lag numbers. Random walk (last year's raw total, no smoothing) trails both by 3&ndash;5 points in most seasons. Hover to read exact values.</figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <p class="eyebrow">Tier 1 &middot; 2024&ndash;2025 only</p>
+    <h2>Market consensus + usage features: XGBoost separates from Ridge</h2>
+    <p class="lede">FantasyPros ECR's real coverage starts in 2021, so a tier-1 panel with every column populated leaves only <strong>two</strong> eval seasons. Treat this table as directional, not conclusive.</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th style="text-align:left">Model</th><th>MAE</th><th>RMSE</th><th>Spearman (pos)</th><th>Top-24 prec.</th><th>VORP-wtd MAE</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="rowlabel">Market consensus</td><td class="best">35.66</td><td class="best">50.90</td><td class="best">0.819</td><td>0.708</td><td class="best">65.93</td></tr>
+          <tr><td class="rowlabel">XGBoost</td><td>35.90</td><td>51.21</td><td>0.805</td><td class="best">0.734</td><td>76.51</td></tr>
+          <tr><td class="rowlabel">Ridge</td><td>40.21</td><td>56.27</td><td>0.755</td><td>0.708</td><td>88.47</td></tr>
+          <tr class="control"><td class="rowlabel">Ridge (tier-0 feats, same panel)</td><td>40.29</td><td>57.11</td><td>0.759</td><td>0.698</td><td>91.58</td></tr>
+          <tr><td class="rowlabel">Hierarchical Bayes</td><td>42.65</td><td>60.12</td><td>0.733</td><td>0.661</td><td>99.43</td></tr>
+          <tr><td class="rowlabel">Regression to mean</td><td>42.91</td><td>60.33</td><td>0.733</td><td>0.656</td><td>100.65</td></tr>
+          <tr><td class="rowlabel">Exp. smoothing</td><td>43.33</td><td>61.02</td><td>0.747</td><td>0.688</td><td>75.91</td></tr>
+          <tr><td class="rowlabel">Random walk</td><td>44.34</td><td>65.44</td><td>0.733</td><td>0.651</td><td>80.72</td></tr>
+          <tr><td class="rowlabel">Position mean</td><td>71.29</td><td>88.57</td><td>&mdash;</td><td class="best">0.219</td><td>182.41</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="table-caption">The italic row is the harness's built-in control: Ridge run on tier-0 features only, but on the same 2024&ndash;2025 panel as everything else — it isolates "more features" from "fewer, easier seasons."</p>
+
+    <h3>Isolating the feature effect from the panel effect</h3>
+    <p>Comparing tier 1 to tier 0's <em>full-panel</em> row would confound two things: a shorter, more recent panel and genuinely new features. The control row separates them.</p>
+
+    <figure class="wide">
+      <div class="chart-card">
+        <svg class="chart-svg" id="chart2" viewBox="0 0 820 300" preserveAspectRatio="xMidYMid meet"></svg>
+      </div>
+      <figcaption>Same 2024&ndash;2025 panel, four ways. Ridge barely moves between tier-0 and tier-1 features (40.29 &rarr; 40.21, ~0.08 MAE) &mdash; it can't exploit opportunity/usage features the way a tree model can. XGBoost drops 4.4 points once those same features are available, closing most of the gap to market consensus. Hover a bar for the exact figure.</figcaption>
+    </figure>
+
+    <div class="findings">
+      <div class="finding">
+        <div class="finding-num">&rarr;</div>
+        <p style="margin:0"><strong>Ridge gets almost nothing from tier 1.</strong> Its linear form can't express the interactions (usage share &times; efficiency, points-over-expected &times; position) that carry most of tier 1's signal.</p>
+      </div>
+      <div class="finding">
+        <div class="finding-num">&rarr;</div>
+        <p style="margin:0"><strong>XGBoost is the closest challenger to the market</strong>, and beats it outright on Top-24 precision (0.734 vs 0.708) — the tree model builds real interactions between usage/opportunity and consensus rank that Ridge structurally cannot.</p>
+      </div>
+      <div class="finding">
+        <div class="finding-num">&rarr;</div>
+        <p style="margin:0"><strong>Nobody beats the market on MAE, RMSE, Spearman, or VORP-weighted MAE.</strong> That's the expected, healthy result — professional consensus rankings should be hard to beat. (<code>ecr_projection</code>, FantasyPros' point-projection column, is never populated in the cached pull, so Market Consensus runs on its log-rank regression fallback alone — and still wins.)</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">Production fit &middot; same run-0 panel</p>
+    <h2>What the models actually learned</h2>
+    <p class="lede">A separate, single fit on every available real player-season (not held-out evaluation) — tier 0: <em>n</em>=11,157 (2000&ndash;2025); tier 1: <em>n</em>=2,415 (2021&ndash;2025). Reproduced with <code>python scripts/extract_model_weights.py</code>. Position codes: QB=0, RB=1, WR=2, TE=3.</p>
+
+    <div class="internals-grid">
+      <div>
+        <h3>Ridge &mdash; top standardized coefficients</h3>
+        <p style="margin:0 0 0.5rem;color:var(--ink-3);font-size:0.82rem;">Tier 1 (of 33 features)</p>
+        <div class="table-wrap">
+          <table class="mini-table">
+            <tbody>
+              <tr><td class="rowlabel">age</td><td>&minus;27.07</td></tr>
+              <tr><td class="rowlabel">exp_fantasy_pts</td><td class="best">+26.14</td></tr>
+              <tr><td class="rowlabel">exp_smooth</td><td>+25.93</td></tr>
+              <tr><td class="rowlabel">age_squared</td><td>+17.12</td></tr>
+              <tr><td class="rowlabel">exp_fantasy_ppg</td><td>+13.10</td></tr>
+              <tr><td class="rowlabel">ecr_rank</td><td>&minus;10.54</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="table-caption">Once ffverse's opportunity model is available, <code>exp_fantasy_pts</code> rivals <code>exp_smooth</code> in weight, and raw lag columns collapse toward zero — Ridge substitutes "expected production given usage" for "what happened last year."</p>
+      </div>
+
+      <div>
+        <h3>XGBoost &mdash; top feature importances</h3>
+        <p style="margin:0 0 0.5rem;color:var(--ink-3);font-size:0.82rem;">Tier 1, gain-normalized (of 32 features)</p>
+        <div class="table-wrap">
+          <table class="mini-table">
+            <tbody>
+              <tr><td class="rowlabel">exp_smooth</td><td class="best">0.307</td></tr>
+              <tr><td class="rowlabel">exp_fantasy_pts</td><td>0.190</td></tr>
+              <tr><td class="rowlabel">ecr_pos_rank</td><td>0.064</td></tr>
+              <tr><td class="rowlabel">points_ppr_lag1</td><td>0.058</td></tr>
+              <tr><td class="rowlabel">ppg_lag2</td><td>0.050</td></tr>
+              <tr><td class="rowlabel">ecr_rank</td><td>0.046</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="table-caption">Top 10 of 32 features already account for 0.826 of total gain. XGBoost puts real weight directly on <code>exp_fantasy_pts</code> and pulls <code>ecr_rank</code>/<code>target_share_lag1</code> into the top 10 — the interaction-building this section's headline finding depends on.</p>
+      </div>
+    </div>
+
+    <h3>Hierarchical Bayes &mdash; position-level parameters (tier 1, MAP fit)</h3>
+    <p style="margin:0 0 0.6rem;color:var(--ink-2);font-size:0.9rem;"><code>points ~ Normal(alpha[pos] + beta[pos] &times; (lag1 &minus; mean(lag1)) + gamma &times; ppg_lag1, sigma)</code></p>
+    <div class="table-wrap">
+      <table class="mini-table">
+        <thead><tr><th style="text-align:left">Position</th><th>alpha</th><th>beta</th></tr></thead>
+        <tbody>
+          <tr><td class="rowlabel">QB</td><td>64.64</td><td>0.568</td></tr>
+          <tr><td class="rowlabel">RB</td><td>63.44</td><td>0.555</td></tr>
+          <tr><td class="rowlabel">WR</td><td>61.02</td><td>0.585</td></tr>
+          <tr><td class="rowlabel">TE</td><td>61.57</td><td>0.595</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="table-caption">gamma (shared ppg_lag1 slope) = <strong>2.863</strong>; sigma (residual sd, also the model's CRPS predictive spread) = <strong>59.39</strong>. The four positions land within a 3.6-point alpha band and 0.04 beta band — position adds little once lag1 and ppg_lag1 are in, consistent with Hierarchical Bayes scoring closest to Regression-to-mean above rather than to XGBoost/Ridge.</p>
+
+    <h3>Market consensus &mdash; per-position log(rank) regression</h3>
+    <p style="margin:0 0 0.6rem;color:var(--ink-2);font-size:0.9rem;"><code>predicted = intercept + slope &times; log1p(ecr_rank)</code>, fit per position (falls back to the global fit below 20 players at a position)</p>
+    <div class="table-wrap">
+      <table class="mini-table">
+        <thead><tr><th style="text-align:left">Position</th><th>Intercept</th><th>Slope</th></tr></thead>
+        <tbody>
+          <tr><td class="rowlabel">Global</td><td>432.73</td><td>&minus;63.17</td></tr>
+          <tr><td class="rowlabel">QB</td><td>825.64</td><td class="best">&minus;126.00</td></tr>
+          <tr><td class="rowlabel">RB</td><td>401.37</td><td>&minus;62.03</td></tr>
+          <tr><td class="rowlabel">WR</td><td>422.93</td><td>&minus;61.57</td></tr>
+          <tr><td class="rowlabel">TE</td><td>425.20</td><td>&minus;61.61</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="table-caption">QB's slope is roughly double every other position's — in a one-QB league, the QB1-vs-QB12 consensus-rank spread maps to a much steeper points gradient than the equivalent spread at RB/WR/TE, which have a long, steep drop-off at the other skill positions instead.</p>
+  </section>
+
+  <section>
+    <p class="eyebrow">Out of scope for this report</p>
+    <h2>What Run 0 doesn't tell you</h2>
+    <ul class="scope-list">
+      <li><strong>Tiers 2&ndash;4</strong> are implemented, point-in-time guarded, and unit-tested, but were not part of this run — that's a separate ablation pass.</li>
+      <li><strong>In-fold hyperparameter tuning</strong> (<code>--tune</code>, nested walk-forward <code>GridSearchCV</code> for Ridge/XGBoost) exists in the harness but was off for Run 0 — every model above used its hardcoded constructor defaults.</li>
+      <li><strong>PBP-derived features</strong> (air yards share, WOPR, red-zone shares) require the large play-by-play pull, which Run 0 skipped via <code>--no-pbp</code>.</li>
+    </ul>
+  </section>
+
+  <section style="margin-bottom:0;">
+    <p class="eyebrow">Reproducing Run 0</p>
+    <pre class="repro">python scripts/run_tiered_ablation.py --max-tier 1 --no-pbp --out-dir data/processed_tier1</pre>
+    <p class="table-caption" style="margin-top:0.8rem;">Writes <code>tiered_forecasting_panel.parquet</code>, <code>tiered_ablation_predictions.csv</code>, <code>tiered_ablation_scores.csv</code>, and one <code>tiered_ablation_&lt;metric&gt;.csv</code> per metric family. Raw nflverse/ffverse pulls are cached to <code>data/cache/*.parquet</code>, so subsequent runs are network-free.</p>
+  </section>
+
+</main>
+
+<footer>Source: <code>RESULTS.md</code>, <code>data/processed_tier1/</code>, <code>src/nfl_research/forecasting/evaluation.py</code>.</footer>
+
+<div class="tooltip" id="tooltip"></div>
+
+<script>
+(function() {
+  function cssVar(name) {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  }
+
+  var seasons = [2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025];
+  var ridge = [39.079283472525894,45.61387875633768,43.077511566800126,42.24332933096322,44.5135192233509,46.573799551539494,45.194178668772295,42.01187865203583,44.34890764544852,44.394432735398624,47.07809610846038,47.24767832045284,49.417794684199215,45.97115032170304,39.38639603538267,44.47782770467329,44.23487227500631,44.65627360306851,43.28886654828198,40.46566540288774,43.49249411535429,42.78954208290809,39.44442339314336];
+  var xgb = [40.46134238588637,46.923257895878386,44.65712371123942,42.22096434389344,45.65801816075825,46.51043970648371,44.845014969595056,41.84770964892943,44.71408361834571,45.00438401116266,47.76559580862523,46.787530617382316,48.99431174816342,45.89038523852269,40.273867985577155,43.12829822597024,43.28374956382064,44.27993985389355,42.618190401111676,40.85523912906646,43.041314749007086,41.834848287550074,39.75158328375532];
+  var rw = [41.19787439613526,48.21651331719128,44.48380047505938,47.13135135135135,48.293189448441254,49.48745762711865,47.86508728179552,45.95661691542288,47.57042857142858,47.894347826086964,49.62187500000001,50.46599520383693,53.957201834862396,49.03668224299066,43.75930394431555,46.88022883295195,48.559953810623554,48.024556962025315,45.92905811623247,42.548542510121464,45.200950323974084,45.88406779661017,42.79679671457906];
+
+  function buildLineChart() {
+    var svg = document.getElementById('chart1');
+    var W = 820, H = 320;
+    var padL = 34, padR = 12, padT = 12, padB = 28;
+    var plotW = W - padL - padR, plotH = H - padT - padB;
+    var yMin = 37, yMax = 55;
+
+    function x(i) { return padL + (i / (seasons.length - 1)) * plotW; }
+    function y(v) { return padT + plotH - ((v - yMin) / (yMax - yMin)) * plotH; }
+
+    var ns = 'http://www.w3.org/2000/svg';
+    function el(tag, attrs) {
+      var e = document.createElementNS(ns, tag);
+      for (var k in attrs) e.setAttribute(k, attrs[k]);
+      return e;
+    }
+
+    var yTicks = [40, 45, 50, 55];
+    yTicks.forEach(function(t) {
+      svg.appendChild(el('line', { x1: padL, x2: W - padR, y1: y(t), y2: y(t), class: 'gridline' }));
+      var lbl = el('text', { x: padL - 8, y: y(t) + 3, class: 'axis-label', 'text-anchor': 'end' });
+      lbl.textContent = t;
+      svg.appendChild(lbl);
+    });
+
+    [2003, 2009, 2015, 2021, 2025].forEach(function(yr) {
+      var i = seasons.indexOf(yr);
+      var lbl = el('text', { x: x(i), y: H - 6, class: 'axis-label', 'text-anchor': 'middle' });
+      lbl.textContent = yr;
+      svg.appendChild(lbl);
+    });
+
+    var series = [
+      { name: 'Ridge', data: ridge, colorVar: '--series-ridge' },
+      { name: 'XGBoost', data: xgb, colorVar: '--series-xgb' },
+      { name: 'Random walk', data: rw, colorVar: '--series-rw' }
+    ];
+
+    var legend = document.getElementById('legend-1');
+    series.forEach(function(s) {
+      var color = cssVar(s.colorVar);
+      var item = document.createElement('div');
+      item.className = 'legend-item';
+      item.innerHTML = '<span class="legend-swatch" style="background:' + color + '"></span>' + s.name;
+      legend.appendChild(item);
+
+      var pts = s.data.map(function(v, i) { return x(i) + ',' + y(v); }).join(' ');
+      svg.appendChild(el('polyline', { points: pts, class: 'series-line', stroke: color }));
+    });
+
+    var crosshair = el('line', { x1: 0, x2: 0, y1: padT, y2: padT + plotH, class: 'crosshair' });
+    svg.appendChild(crosshair);
+
+    var dots = series.map(function(s) {
+      var d = el('circle', { r: 4, class: 'hover-dot', stroke: cssVar(s.colorVar), opacity: 0 });
+      svg.appendChild(d);
+      return d;
+    });
+
+    var overlay = el('rect', { x: padL, y: padT, width: plotW, height: plotH, class: 'overlay-rect' });
+    svg.appendChild(overlay);
+
+    var tooltip = document.getElementById('tooltip');
+    var card = svg.closest('.chart-card');
+
+    function showAt(i, clientX, clientY) {
+      var xi = x(i);
+      crosshair.setAttribute('x1', xi);
+      crosshair.setAttribute('x2', xi);
+      crosshair.style.opacity = 1;
+      var rows = '<div style="font-weight:600;margin-bottom:0.3rem;">' + seasons[i] + '</div>';
+      series.forEach(function(s, idx) {
+        dots[idx].setAttribute('cx', xi);
+        dots[idx].setAttribute('cy', y(s.data[i]));
+        dots[idx].style.opacity = 1;
+        rows += '<div class="tt-row"><span><span class="tt-swatch" style="background:' + cssVar(s.colorVar) + '"></span>' + s.name + '</span><span>' + s.data[i].toFixed(1) + '</span></div>';
+      });
+      tooltip.innerHTML = rows;
+      tooltip.style.opacity = 1;
+      var rect = card.getBoundingClientRect();
+      tooltip.style.left = (clientX - rect.left + 14) + 'px';
+      tooltip.style.top = (clientY - rect.top - 10) + 'px';
+    }
+
+    function hide() {
+      crosshair.style.opacity = 0;
+      dots.forEach(function(d) { d.style.opacity = 0; });
+      tooltip.style.opacity = 0;
+    }
+
+    overlay.addEventListener('mousemove', function(evt) {
+      var rect = svg.getBoundingClientRect();
+      var scale = W / rect.width;
+      var mx = (evt.clientX - rect.left) * scale;
+      var i = Math.round(((mx - padL) / plotW) * (seasons.length - 1));
+      i = Math.max(0, Math.min(seasons.length - 1, i));
+      showAt(i, evt.clientX, evt.clientY);
+    });
+    overlay.addEventListener('mouseleave', hide);
+  }
+
+  function buildBarChart() {
+    var svg = document.getElementById('chart2');
+    var W = 820, H = 300;
+    var padL = 40, padR = 12;
+    var padT = 24, padB = 46;
+    var plotW = W - padL - padR, plotH = H - padT - padB;
+    var yMax = 46;
+
+    var bars = [
+      { label: 'Ridge', sub: 'tier-0 features', value: 40.29, colorVar: '--ink-3' },
+      { label: 'Ridge', sub: 'tier-1 features', value: 40.21, colorVar: '--series-ridge' },
+      { label: 'XGBoost', sub: 'tier-1 features', value: 35.90, colorVar: '--series-xgb' },
+      { label: 'Market consensus', sub: 'ECR rank', value: 35.66, colorVar: '--gold' }
+    ];
+
+    function y(v) { return padT + plotH - (v / yMax) * plotH; }
+
+    var ns = 'http://www.w3.org/2000/svg';
+    function el(tag, attrs) {
+      var e = document.createElementNS(ns, tag);
+      for (var k in attrs) e.setAttribute(k, attrs[k]);
+      return e;
+    }
+
+    [10, 20, 30, 40].forEach(function(t) {
+      svg.appendChild(el('line', { x1: padL, x2: W - padR, y1: y(t), y2: y(t), class: 'gridline' }));
+      var lbl = el('text', { x: padL - 8, y: y(t) + 3, class: 'axis-label', 'text-anchor': 'end' });
+      lbl.textContent = t;
+      svg.appendChild(lbl);
+    });
+
+    var slot = plotW / bars.length;
+    var barW = slot * 0.42;
+    var tooltip = document.getElementById('tooltip');
+    var card = svg.closest('.chart-card');
+
+    bars.forEach(function(b, i) {
+      var cx = padL + slot * i + slot / 2;
+      var bx = cx - barW / 2;
+      var by = y(b.value);
+      var bh = (padT + plotH) - by;
+      var color = cssVar(b.colorVar);
+
+      var rect = el('rect', { x: bx, y: by, width: barW, height: bh, rx: 4, fill: color, class: 'bar' });
+      svg.appendChild(rect);
+
+      var val = el('text', { x: cx, y: by - 8, class: 'bar-label', 'text-anchor': 'middle' });
+      val.textContent = b.value.toFixed(2);
+      svg.appendChild(val);
+
+      var cat1 = el('text', { x: cx, y: padT + plotH + 18, class: 'bar-cat', 'text-anchor': 'middle', 'font-weight': '600' });
+      cat1.textContent = b.label;
+      svg.appendChild(cat1);
+      var cat2 = el('text', { x: cx, y: padT + plotH + 32, class: 'bar-cat', 'text-anchor': 'middle' });
+      cat2.textContent = b.sub;
+      svg.appendChild(cat2);
+
+      rect.addEventListener('mousemove', function(evt) {
+        tooltip.innerHTML = '<div style="font-weight:600;">' + b.label + ' &middot; ' + b.sub + '</div><div>MAE ' + b.value.toFixed(2) + '</div>';
+        tooltip.style.opacity = 1;
+        var rectBox = card.getBoundingClientRect();
+        tooltip.style.left = (evt.clientX - rectBox.left + 14) + 'px';
+        tooltip.style.top = (evt.clientY - rectBox.top - 10) + 'px';
+      });
+      rect.addEventListener('mouseleave', function() { tooltip.style.opacity = 0; });
+    });
+  }
+
+  buildLineChart();
+  buildBarChart();
+})();
+</script>
