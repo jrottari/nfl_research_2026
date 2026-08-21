@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(& \"C:\\\\Users\\\\user\\\\repos\\\\nfl_research_2026\\\\nfl_research_2026\\\\Scripts\\\\python.exe\" -c \"import sys; print\\(sys.version\\); import nflreadpy; print\\('nflreadpy ok'\\)\" 2>&1)",
+      "PowerShell(& \"C:\\\\Users\\\\user\\\\repos\\\\nfl_research_2026\\\\nfl_research_2026\\\\Scripts\\\\pip.exe\" install scikit-learn xgboost pymc 2>&1 | Select-Object -Last 20)",
+      "Bash(mkdir -p \"/c/Users/user/repos/nfl_research_2026/src/nfl_research/forecasting\")",
+      "Bash(mkdir -p \"/c/Users/user/repos/nfl_research_2026/scripts\")",
+      "PowerShell(& \"C:\\\\Users\\\\user\\\\repos\\\\nfl_research_2026\\\\nfl_research_2026\\\\Scripts\\\\pip.exe\" install pytest -q)",
+      "PowerShell(& \"C:\\\\Users\\\\user\\\\repos\\\\nfl_research_2026\\\\nfl_research_2026\\\\Scripts\\\\python.exe\" -m pytest \"C:\\\\Users\\\\user\\\\repos\\\\nfl_research_2026\\\\tests\\\\test_forecasting.py\" -v 2>&1)",
+      "PowerShell(& \"C:\\\\Users\\\\user\\\\repos\\\\nfl_research_2026\\\\nfl_research_2026\\\\Scripts\\\\python.exe\" -m pytest \"C:\\\\Users\\\\user\\\\repos\\\\nfl_research_2026\\\\tests\\\\test_pipeline.py\" -q 2>&1)",
+      "PowerShell(& \"C:\\\\Users\\\\user\\\\repos\\\\nfl_research_2026\\\\nfl_research_2026\\\\Scripts\\\\python.exe\" -m pytest \"C:\\\\Users\\\\user\\\\repos\\\\nfl_research_2026\\\\tests\\\\test_forecasting.py\" -q 2>&1)",
+      "PowerShell(& \"C:\\\\Users\\\\user\\\\repos\\\\nfl_research_2026\\\\nfl_research_2026\\\\Scripts\\\\python.exe\" -m pytest \"C:\\\\Users\\\\user\\\\repos\\\\nfl_research_2026\\\\tests\\\\\" -q 2>&1)",
+      "PowerShell(git *)",
+      "PowerShell(\\(Get-Content \"C:\\\\Users\\\\user\\\\Dropbox\\\\Josiah\\\\Fantasy Football Research\\\\Code\\\\2024.Research.by.Game.R\" -Raw\\).Length; Get-Item \"C:\\\\Users\\\\user\\\\Dropbox\\\\Josiah\\\\Fantasy Football Research\\\\Code\\\\2024.Research.by.Game.R\" | Select-Object Length)",
+      "PowerShell(Import-Csv *)",
+      "PowerShell(Get-ChildItem \"C:\\\\Users\\\\user\\\\repos\\\\nfl_research_2026\" -Recurse -Depth 2 | Where-Object {!$_.PSIsContainer} | Select-Object FullName | Sort-Object FullName)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(.\\\\nfl_research_2026\\\\Scripts\\\\python.exe scripts/extended_research.py)",
+      "PowerShell(cd \"C:\\\\Users\\\\user\\\\repos\\\\nfl_research_2026\"; $env:PYTHONIOENCODING=\"utf-8\"; .\\\\nfl_research_2026\\\\Scripts\\\\python.exe scripts\\\\extended_research.py 2>&1)",
+      "PowerShell(cd \"C:\\\\Users\\\\user\\\\repos\\\\nfl_research_2026\"; $env:PYTHONIOENCODING=\"utf-8\"; .\\\\nfl_research_2026\\\\Scripts\\\\python.exe scripts\\\\probe_rankings.py 2>&1)"
+    ]
+  }
+}

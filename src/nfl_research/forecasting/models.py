@@ -2,23 +2,27 @@
 
 All models expose a minimal sklearn-compatible interface::
 
-    model.fit(X_train, y_train)   # X is a DataFrame from features.feature_matrix()
+    model.fit(X_train, y_train)   # X is a DataFrame from feature_matrix()
     model.predict(X_test)         # returns a numpy array of point-total forecasts
 
-The ``name`` attribute is used in reporting.
+Every model class declares a ``feature_spec`` attribute (FeatureSpec) so the
+evaluation harness knows which tier of features each model needs.  The tier-aware
+models (Ridge, XGBoost, HierarchicalBayes) also accept a ``max_tier`` constructor
+argument so the same class can be evaluated at every tier in the ablation sweep.
 """
 
 from __future__ import annotations
 
 import warnings
-from typing import Any
+from typing import Any, NamedTuple
 
 import numpy as np
 import pandas as pd
 from scipy.optimize import minimize_scalar
+from sklearn.base import BaseEstimator
 from sklearn.linear_model import Ridge
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
 try:
     import xgboost as xgb
@@ -32,11 +36,28 @@ try:
 except ImportError:
     _PYMC_AVAILABLE = False
 
+# Columns that identify rows but are not features
+_ID_COLS = frozenset({"player_id", "player_name", "position", "season", "target"})
+
+
+class NotFittedError(RuntimeError):
+    pass
+
+
+class FeatureSpec(NamedTuple):
+    max_tier: int              # highest tier this model consumes
+    required: tuple[str, ...]  # columns that must be present at fit() time
+
+
+# ---------------------------------------------------------------------------
+# Tier-0 baselines
+# ---------------------------------------------------------------------------
 
 class RandomWalkModel:
     """Baseline: forecast = last year's PPR total (random walk)."""
 
     name = "random_walk"
+    feature_spec = FeatureSpec(max_tier=0, required=("points_ppr_lag1",))
 
     def fit(self, X: pd.DataFrame, y: pd.Series) -> "RandomWalkModel":
         return self
@@ -49,19 +70,24 @@ class PositionMeanModel:
     """Second baseline: predict the position-conditional mean from training data."""
 
     name = "position_mean"
+    feature_spec = FeatureSpec(max_tier=0, required=("pos_code",))
 
     def __init__(self) -> None:
         self._means: dict[int, float] = {}
         self._global_mean: float = 0.0
+        self._fitted = False
 
     def fit(self, X: pd.DataFrame, y: pd.Series) -> "PositionMeanModel":
         self._global_mean = float(y.mean())
         for code in X["pos_code"].unique():
             mask = X["pos_code"] == code
             self._means[int(code)] = float(y[mask].mean())
+        self._fitted = True
         return self
 
     def predict(self, X: pd.DataFrame) -> np.ndarray:
+        if not self._fitted:
+            raise NotFittedError("Call fit() before predict()")
         return X["pos_code"].map(self._means).fillna(self._global_mean).values
 
 
@@ -74,21 +100,27 @@ class ExponentialSmoothingModel:
     """
 
     name = "exp_smoothing"
+    feature_spec = FeatureSpec(
+        max_tier=0,
+        required=("points_ppr_lag1", "points_ppr_lag2"),
+    )
 
     def __init__(self, alpha: float = 0.5) -> None:
         self.alpha = alpha
         self._fitted_alpha: float = alpha
+        self._fitted = False
 
     def _predict_with_alpha(self, X: pd.DataFrame, alpha: float) -> np.ndarray:
         a, b, c = alpha, alpha * (1 - alpha), alpha * (1 - alpha) ** 2
         l1 = X["points_ppr_lag1"].fillna(0)
         l2 = X["points_ppr_lag2"].fillna(0)
-        l3 = X["points_ppr_lag3"].fillna(0) if "points_ppr_lag3" in X.columns else pd.Series(0, index=X.index)
+        l3 = (X["points_ppr_lag3"].fillna(0)
+               if "points_ppr_lag3" in X.columns else pd.Series(0.0, index=X.index))
 
-        # normalise weights by how many lags are actually available
         w1 = a * X["points_ppr_lag1"].notna().astype(float)
         w2 = b * X["points_ppr_lag2"].notna().astype(float)
-        w3 = c * (X["points_ppr_lag3"].notna().astype(float) if "points_ppr_lag3" in X.columns else 0)
+        w3 = c * (X["points_ppr_lag3"].notna().astype(float)
+                  if "points_ppr_lag3" in X.columns else 0.0)
         total_w = (w1 + w2 + w3).replace(0, float("nan"))
 
         return ((l1 * w1 + l2 * w2 + l3 * w3) / total_w).fillna(l1).values
@@ -100,9 +132,12 @@ class ExponentialSmoothingModel:
 
         result = minimize_scalar(mse, bounds=(0.05, 0.95), method="bounded")
         self._fitted_alpha = float(result.x)
+        self._fitted = True
         return self
 
     def predict(self, X: pd.DataFrame) -> np.ndarray:
+        if not self._fitted:
+            raise NotFittedError("Call fit() before predict()")
         return self._predict_with_alpha(X, self._fitted_alpha)
 
     @property
@@ -111,90 +146,148 @@ class ExponentialSmoothingModel:
 
 
 class RegressionToMeanModel:
-    """Per-position regression-to-mean: forecast = pos_mean + beta*(lag1 - pos_mean).
+    """Per-position regression-to-mean: forecast = mu_lag1 + beta*(lag1 - mu_lag1).
 
-    Beta is fit separately per position. Equivalent to shrinkage toward the
-    position mean; beta=1 is random walk, beta=0 is pure position mean.
+    Bug fixed vs original: OLS line passes through (mean(lag1), mean(y)), not
+    (mean(y), mean(y)).  We now store the per-position mean of lag1 as the
+    centering constant (not the mean of y), which matches the OLS geometry.
     """
 
     name = "regression_to_mean"
+    feature_spec = FeatureSpec(max_tier=0, required=("points_ppr_lag1", "pos_code"))
 
     def __init__(self) -> None:
-        self._pos_mean: dict[int, float] = {}
+        self._lag1_mean: dict[int, float] = {}  # centering constant = E[lag1 | pos]
+        self._y_mean: dict[int, float] = {}     # predicted value when lag1 == E[lag1]
         self._pos_beta: dict[int, float] = {}
+        self._fitted = False
 
     def fit(self, X: pd.DataFrame, y: pd.Series) -> "RegressionToMeanModel":
         for code in X["pos_code"].unique():
             mask = X["pos_code"] == code
-            xc = X.loc[mask, "points_ppr_lag1"].fillna(0)
+            lag1 = X.loc[mask, "points_ppr_lag1"].fillna(0)
             yc = y[mask]
-            mu = float(yc.mean())
-            self._pos_mean[int(code)] = mu
-            # OLS of y on lag1 within position
-            x_centered = xc - mu
+            mu_x = float(lag1.mean())     # center of lag1 (correct OLS anchor)
+            mu_y = float(yc.mean())       # E[y | pos]
+            self._lag1_mean[int(code)] = mu_x
+            self._y_mean[int(code)] = mu_y
+            x_centered = lag1 - mu_x
             if x_centered.std() > 0:
-                beta = float(np.cov(x_centered, yc - mu)[0, 1] / x_centered.var())
+                beta = float(np.cov(x_centered, yc)[0, 1] / x_centered.var())
                 beta = float(np.clip(beta, 0.0, 1.5))
             else:
                 beta = 1.0
             self._pos_beta[int(code)] = beta
+        self._fitted = True
         return self
 
     def predict(self, X: pd.DataFrame) -> np.ndarray:
+        if not self._fitted:
+            raise NotFittedError("Call fit() before predict()")
         out = np.zeros(len(X))
         lag1 = X["points_ppr_lag1"].fillna(0).values
-        for i, code in enumerate(X["pos_code"].values):
-            mu = self._pos_mean.get(int(code), float(np.mean(lag1)))
+        codes = X["pos_code"].values
+        global_mu_x = float(np.mean(list(self._lag1_mean.values()))) if self._lag1_mean else 0.0
+        global_mu_y = float(np.mean(list(self._y_mean.values()))) if self._y_mean else 0.0
+        for i, code in enumerate(codes):
+            mu_x = self._lag1_mean.get(int(code), global_mu_x)
+            mu_y = self._y_mean.get(int(code), global_mu_y)
             beta = self._pos_beta.get(int(code), 1.0)
-            out[i] = mu + beta * (lag1[i] - mu)
+            out[i] = mu_y + beta * (lag1[i] - mu_x)
         return out
 
 
-class RidgeModel:
-    """Ridge regression with position dummies and StandardScaler."""
+# ---------------------------------------------------------------------------
+# Tier-aware parametric models
+# ---------------------------------------------------------------------------
+
+class RidgeModel(BaseEstimator):
+    """Ridge regression with position encoding and StandardScaler.
+
+    Fixes vs original:
+    - Uses fitted OneHotEncoder(drop='first') instead of pd.get_dummies so
+      train/test always drop the same reference category.
+    - Accepts max_tier to slice the wide feature matrix.
+    """
 
     name = "ridge"
+    _BASE_REQUIRED = ("points_ppr_lag1", "pos_code")
 
-    def __init__(self, alpha: float = 10.0) -> None:
+    def __init__(self, alpha: float = 10.0, max_tier: int = 4) -> None:
         self.alpha = alpha
+        self.max_tier = max_tier
         self._feature_cols: list[str] = []
         self._pipeline: Pipeline | None = None
+        self._encoder: OneHotEncoder | None = None
+        self._fitted = False
 
-    def _make_cols(self, X: pd.DataFrame) -> list[str]:
-        base = [
-            "points_ppr_lag1", "points_ppr_lag2", "ppg_lag1", "ppg_lag2",
-            "games_lag1", "games_lag2", "trend_1", "trend_2",
-            "career_season", "exp_smooth",
-        ]
-        return [c for c in base if c in X.columns]
+    @property
+    def feature_spec(self) -> FeatureSpec:
+        return FeatureSpec(max_tier=self.max_tier, required=self._BASE_REQUIRED)
 
-    def _add_pos_dummies(self, X: pd.DataFrame) -> pd.DataFrame:
-        dummies = pd.get_dummies(X["pos_code"].astype(str), prefix="pos", drop_first=True)
-        return pd.concat([X[self._feature_cols].fillna(0), dummies], axis=1)
+    def get_params(self, deep: bool = True) -> dict:
+        return {"alpha": self.alpha, "max_tier": self.max_tier}
+
+    def set_params(self, **params: Any) -> "RidgeModel":
+        for k, v in params.items():
+            setattr(self, k, v)
+        return self
+
+    def _select_features(self, X: pd.DataFrame) -> list[str]:
+        from .feature_registry import REGISTRY
+        allowed = {
+            col for col, spec in REGISTRY.items()
+            if spec.tier <= self.max_tier and col not in _ID_COLS and col != "target"
+        }
+        return [c for c in X.columns if c in allowed and X[c].dtype.kind in "fiub"]
 
     def fit(self, X: pd.DataFrame, y: pd.Series) -> "RidgeModel":
-        self._feature_cols = self._make_cols(X)
-        Xd = self._add_pos_dummies(X)
+        self._feature_cols = self._select_features(X)
+        if not self._feature_cols:
+            # Fallback if registry not available yet — keep backwards compat
+            self._feature_cols = [c for c in X.columns
+                                  if c not in _ID_COLS and X[c].dtype.kind in "fiub"]
+
+        # Fit position encoder once on training data
+        self._encoder = OneHotEncoder(
+            handle_unknown="ignore", drop="first", sparse_output=False
+        )
+        pos_train = X[["pos_code"]].fillna(-1).astype(str)
+        self._encoder.fit(pos_train)
+
+        Xf = self._encode(X)
         self._pipeline = Pipeline([
             ("scaler", StandardScaler()),
             ("ridge", Ridge(alpha=self.alpha)),
         ])
-        self._pipeline.fit(Xd, y)
-        self._dummy_cols = list(Xd.columns)
+        self._pipeline.fit(Xf, y)
+        self._fitted = True
         return self
 
+    def _encode(self, X: pd.DataFrame) -> pd.DataFrame:
+        numeric = X[self._feature_cols].fillna(0)
+        pos_encoded = pd.DataFrame(
+            self._encoder.transform(X[["pos_code"]].fillna(-1).astype(str)),
+            columns=self._encoder.get_feature_names_out(["pos_code"]),
+            index=X.index,
+        )
+        return pd.concat([numeric, pos_encoded], axis=1)
+
     def predict(self, X: pd.DataFrame) -> np.ndarray:
-        Xd = self._add_pos_dummies(X)
-        # align columns (train might have had dummies test doesn't)
-        for c in self._dummy_cols:
-            if c not in Xd.columns:
-                Xd[c] = 0
-        Xd = Xd[self._dummy_cols]
-        return self._pipeline.predict(Xd).clip(min=0)  # type: ignore[union-attr]
+        if not self._fitted or self._pipeline is None:
+            raise NotFittedError("Call fit() before predict()")
+        Xf = self._encode(X)
+        return self._pipeline.predict(Xf).clip(min=0)
 
 
-class XGBoostModel:
-    """XGBoost gradient boosting with the full feature set."""
+class XGBoostModel(BaseEstimator):
+    """XGBoost gradient boosting with tier-aware feature selection.
+
+    Fixes vs original:
+    - predict() uses X.reindex(columns=self._cols).fillna(0) (not list-comp)
+    - Uses allowlist from feature registry rather than a denylist
+    - Attributes initialised in __init__ so AttributeError on unfit model is clean
+    """
 
     name = "xgboost"
 
@@ -206,170 +299,358 @@ class XGBoostModel:
         subsample: float = 0.8,
         colsample_bytree: float = 0.8,
         reg_lambda: float = 5.0,
+        max_tier: int = 4,
     ) -> None:
         if not _XGB_AVAILABLE:
             raise ImportError("xgboost is not installed.")
-        self._params = dict(
-            n_estimators=n_estimators,
-            max_depth=max_depth,
-            learning_rate=learning_rate,
-            subsample=subsample,
-            colsample_bytree=colsample_bytree,
-            reg_lambda=reg_lambda,
+        self.n_estimators = n_estimators
+        self.max_depth = max_depth
+        self.learning_rate = learning_rate
+        self.subsample = subsample
+        self.colsample_bytree = colsample_bytree
+        self.reg_lambda = reg_lambda
+        self.max_tier = max_tier
+        self._model: Any = None
+        self._cols: list[str] = []
+        self._fitted = False
+
+    @property
+    def feature_spec(self) -> FeatureSpec:
+        return FeatureSpec(max_tier=self.max_tier, required=("points_ppr_lag1",))
+
+    def get_params(self, deep: bool = True) -> dict:
+        return {
+            "n_estimators": self.n_estimators,
+            "max_depth": self.max_depth,
+            "learning_rate": self.learning_rate,
+            "subsample": self.subsample,
+            "colsample_bytree": self.colsample_bytree,
+            "reg_lambda": self.reg_lambda,
+            "max_tier": self.max_tier,
+        }
+
+    def set_params(self, **params: Any) -> "XGBoostModel":
+        for k, v in params.items():
+            setattr(self, k, v)
+        return self
+
+    def _allowlist_cols(self, X: pd.DataFrame) -> list[str]:
+        try:
+            from .feature_registry import REGISTRY
+            allowed = {
+                col for col, spec in REGISTRY.items()
+                if spec.tier <= self.max_tier and col not in _ID_COLS and col != "target"
+            }
+            cols = [c for c in X.columns if c in allowed and X[c].dtype.kind in "fiub"]
+        except ImportError:
+            cols = [c for c in X.columns
+                    if c not in _ID_COLS and X[c].dtype.kind in "fiub"]
+        return cols
+
+    def fit(self, X: pd.DataFrame, y: pd.Series) -> "XGBoostModel":
+        self._cols = self._allowlist_cols(X)
+        Xf = X.reindex(columns=self._cols).fillna(0)
+        self._model = xgb.XGBRegressor(
+            n_estimators=self.n_estimators,
+            max_depth=self.max_depth,
+            learning_rate=self.learning_rate,
+            subsample=self.subsample,
+            colsample_bytree=self.colsample_bytree,
+            reg_lambda=self.reg_lambda,
             objective="reg:squarederror",
             random_state=42,
         )
-        self._model: Any = None
-        self._cols: list[str] = []
-
-    def fit(self, X: pd.DataFrame, y: pd.Series) -> "XGBoostModel":
-        self._cols = [c for c in X.columns if c not in ("player_id", "player_name", "position", "season")]
-        Xf = X[self._cols].fillna(0)
-        self._model = xgb.XGBRegressor(**self._params)
         self._model.fit(Xf, y, verbose=False)
+        self._fitted = True
         return self
 
     def predict(self, X: pd.DataFrame) -> np.ndarray:
-        Xf = X[[c for c in self._cols if c in X.columns]].fillna(0)
+        if not self._fitted or self._model is None:
+            raise NotFittedError("Call fit() before predict()")
+        Xf = X.reindex(columns=self._cols).fillna(0)
         return self._model.predict(Xf).clip(min=0)
 
     def feature_importance(self) -> pd.Series:
+        if not self._fitted:
+            raise NotFittedError("Call fit() before feature_importance()")
         return pd.Series(
-            self._model.feature_importances_,
-            index=self._cols,
+            self._model.feature_importances_, index=self._cols
         ).sort_values(ascending=False)
 
 
 class HierarchicalBayesModel:
     """Hierarchical Bayesian model with position-level priors (PyMC).
 
-    mu_i = alpha[pos] + beta[pos] * lag1 + gamma * ppg_lag1
-    y_i  ~ Normal(mu_i, sigma)
-
-    Position-level alpha and beta share hyperpriors (partial pooling).
-    Uses MAP estimation by default for speed; call sample() for full MCMC.
+    Fixes vs original:
+    1. _prepare() is now pure — never writes to self.  fit() and predict()
+       both call it and use the returned values directly.
+    2. lag1 is centered before entering the likelihood so alpha and beta
+       are no longer strongly correlated.
+    3. Non-centered parameterization for position-level effects.
+    4. Default inference switched to ADVI (pm.fit) to escape the
+       HalfNormal funnel; MAP still available via use_map=True.
+    5. Attributes initialised in __init__.
     """
 
     name = "hierarchical_bayes"
+    feature_spec = FeatureSpec(max_tier=1, required=("points_ppr_lag1", "ppg_lag1", "pos_code"))
 
-    def __init__(self, use_map: bool = True, draws: int = 500, tune: int = 300) -> None:
+    def __init__(
+        self,
+        use_map: bool = False,
+        draws: int = 1000,
+        tune: int = 500,
+        advi_iterations: int = 30_000,
+        max_tier: int = 1,
+    ) -> None:
         if not _PYMC_AVAILABLE:
             raise ImportError("pymc is not installed. pip install pymc")
         self.use_map = use_map
         self.draws = draws
         self.tune = tune
+        self.advi_iterations = advi_iterations
+        self.max_tier = max_tier
+        # Initialise all fit-time attributes so AttributeError on unfit model is clean
         self._map: dict[str, Any] = {}
         self._positions: list[str] = []
+        self._pos_map: dict[int, int] = {}
+        self._lag1_train_mean: float = 0.0
+        self._fitted = False
 
-    def _build_model(
-        self,
-        lag1: np.ndarray,
-        ppg1: np.ndarray,
-        pos_idx: np.ndarray,
-        n_positions: int,
-        y: np.ndarray | None = None,
-    ):
-        import pymc as pm
-        coords = {"position": self._positions}
-        with pm.Model(coords=coords) as model:
-            # Hyperpriors
-            alpha_mu = pm.Normal("alpha_mu", mu=50, sigma=40)
-            alpha_sd = pm.HalfNormal("alpha_sd", sigma=20)
-            beta_mu = pm.Normal("beta_mu", mu=0.75, sigma=0.10)
-            beta_sd = pm.HalfNormal("beta_sd", sigma=0.15)
-
-            # Position-level parameters
-            alpha = pm.Normal("alpha", mu=alpha_mu, sigma=alpha_sd, dims="position")
-            beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sd, dims="position")
-            gamma = pm.Normal("gamma", mu=0.0, sigma=3.0)
-
-            sigma = pm.HalfNormal("sigma", sigma=40)
-
-            mu = alpha[pos_idx] + beta[pos_idx] * lag1 + gamma * ppg1
-
-            if y is not None:
-                pm.Normal("y_obs", mu=mu, sigma=sigma, observed=y)
-
-        return model
+    @property
+    def feature_spec(self) -> FeatureSpec:  # type: ignore[override]
+        return FeatureSpec(max_tier=self.max_tier, required=("points_ppr_lag1", "ppg_lag1", "pos_code"))
 
     def _prepare(self, X: pd.DataFrame) -> tuple:
+        """Pure helper — returns derived arrays, writes nothing to self."""
         pos_codes = sorted(X["pos_code"].unique())
-        self._positions = [str(c) for c in pos_codes]
+        positions = [str(c) for c in pos_codes]
         pos_map = {c: i for i, c in enumerate(pos_codes)}
         lag1 = X["points_ppr_lag1"].fillna(0).values.astype(float)
         ppg1 = X["ppg_lag1"].fillna(0).values.astype(float)
         pos_idx = X["pos_code"].map(pos_map).fillna(0).values.astype(int)
-        return lag1, ppg1, pos_idx, len(pos_codes), pos_map
+        return lag1, ppg1, pos_idx, len(pos_codes), pos_map, positions
+
+    def _build_model(
+        self,
+        lag1_c: np.ndarray,   # already centered
+        ppg1: np.ndarray,
+        pos_idx: np.ndarray,
+        positions: list[str],
+        y: np.ndarray | None = None,
+    ):
+        import pymc as pm
+        n_pos = len(positions)
+        coords = {"position": positions}
+        with pm.Model(coords=coords) as model:
+            # Hyperpriors
+            alpha_mu = pm.Normal("alpha_mu", mu=150.0, sigma=60.0)
+            alpha_sd = pm.HalfNormal("alpha_sd", sigma=30.0)
+            beta_mu  = pm.Normal("beta_mu", mu=0.75, sigma=0.15)
+            beta_sd  = pm.HalfNormal("beta_sd", sigma=0.15)
+
+            # Non-centered position effects
+            alpha_offset = pm.Normal("alpha_offset", mu=0.0, sigma=1.0,
+                                     shape=n_pos)
+            beta_offset  = pm.Normal("beta_offset",  mu=0.0, sigma=1.0,
+                                     shape=n_pos)
+            alpha = pm.Deterministic("alpha", alpha_mu + alpha_sd * alpha_offset)
+            beta  = pm.Deterministic("beta",  beta_mu  + beta_sd  * beta_offset)
+
+            gamma = pm.Normal("gamma", mu=0.0, sigma=5.0)
+            sigma = pm.HalfNormal("sigma", sigma=60.0)
+
+            # lag1_c is already centred so alpha is the expected output at lag1=E[lag1]
+            mu = alpha[pos_idx] + beta[pos_idx] * lag1_c + gamma * ppg1
+
+            if y is not None:
+                pm.Normal("y_obs", mu=mu, sigma=sigma, observed=y)
+        return model
 
     def fit(self, X: pd.DataFrame, y: pd.Series) -> "HierarchicalBayesModel":
         import pymc as pm
-        lag1, ppg1, pos_idx, n_pos, self._pos_map = self._prepare(X)
+
+        lag1, ppg1, pos_idx, n_pos, pos_map, positions = self._prepare(X)
+        lag1_mean = float(lag1.mean())
+        lag1_c = lag1 - lag1_mean
         y_arr = y.values.astype(float)
 
-        model = self._build_model(lag1, ppg1, pos_idx, n_pos, y=y_arr)
+        # Store for predict()
+        self._positions = positions
+        self._pos_map   = pos_map
+        self._lag1_train_mean = lag1_mean
+
+        model = self._build_model(lag1_c, ppg1, pos_idx, positions, y=y_arr)
+
         with model:
             if self.use_map:
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore")
                     self._map = pm.find_MAP(progressbar=False)
             else:
-                self._trace = pm.sample(
-                    draws=self.draws,
-                    tune=self.tune,
-                    chains=2,
+                approx = pm.fit(
+                    n=self.advi_iterations,
+                    method="advi",
                     progressbar=False,
-                    return_inferencedata=True,
-                    target_accept=0.9,
+                    random_seed=42,
                 )
-                # Store posterior means as MAP-equivalent for predict()
-                import arviz as az
-                post = self._trace.posterior
+                trace = approx.sample(self.draws, random_seed=42)
+                post = trace.posterior
                 self._map = {
                     "alpha": post["alpha"].mean(("chain", "draw")).values,
-                    "beta": post["beta"].mean(("chain", "draw")).values,
+                    "beta":  post["beta"].mean(("chain", "draw")).values,
                     "gamma": float(post["gamma"].mean()),
                 }
+
+        self._fitted = True
         return self
 
     def predict(self, X: pd.DataFrame) -> np.ndarray:
-        lag1, ppg1, pos_idx, n_pos, _ = self._prepare(X)
+        if not self._fitted:
+            raise NotFittedError("Call fit() before predict()")
 
-        alpha_vals = self._map.get("alpha", np.zeros(len(self._positions)))
-        beta_vals = self._map.get("beta", np.ones(len(self._positions)) * 0.75)
-        gamma_val = float(self._map.get("gamma", 0.0))
+        lag1, ppg1, pos_idx_raw, _, test_pos_map, _ = self._prepare(X)
+        lag1_c = lag1 - self._lag1_train_mean
 
-        # Remap pos_idx to stored positions
-        pos_map = {c: i for i, c in enumerate(sorted(X["pos_code"].unique()))}
-        # pos_idx already computed in _prepare; use the stored _pos_map
-        pos_idx = X["pos_code"].map(self._pos_map).fillna(0).values.astype(int)
-        # Clip to valid range
-        pos_idx = np.clip(pos_idx, 0, len(alpha_vals) - 1)
+        # Map test pos_codes to training position indices
+        # (test may have seen fewer positions than train)
+        pos_idx = (
+            X["pos_code"]
+            .map(self._pos_map)         # map to train index
+            .fillna(0)
+            .values.astype(int)
+        )
+        pos_idx = np.clip(pos_idx, 0, len(self._positions) - 1)
 
-        preds = alpha_vals[pos_idx] + beta_vals[pos_idx] * lag1 + gamma_val * ppg1
+        alpha_vals = np.asarray(self._map.get("alpha", np.zeros(len(self._positions))))
+        beta_vals  = np.asarray(self._map.get("beta",  np.ones(len(self._positions)) * 0.75))
+        gamma_val  = float(self._map.get("gamma", 0.0))
+
+        preds = alpha_vals[pos_idx] + beta_vals[pos_idx] * lag1_c + gamma_val * ppg1
         return np.clip(preds, 0, None)
 
     def position_params(self) -> pd.DataFrame:
         """Return fitted alpha/beta per position for inspection."""
-        alpha = self._map.get("alpha", [])
-        beta = self._map.get("beta", [])
+        if not self._fitted:
+            raise NotFittedError("Call fit() before position_params()")
         return pd.DataFrame({
             "position": self._positions,
-            "alpha": alpha,
-            "beta": beta,
+            "alpha": self._map.get("alpha", []),
+            "beta":  self._map.get("beta", []),
         })
 
 
-def MODELS() -> list:
-    """Return one fresh instance of every available model."""
-    models = [
+# ---------------------------------------------------------------------------
+# Market baseline (tier 1)
+# ---------------------------------------------------------------------------
+
+class MarketConsensusModel:
+    """Market baseline: map preseason FantasyPros ECR rank to PPR point forecast.
+
+    ECR (Expert Consensus Ranking) is the preseason consensus draft ranking.
+    Fit a position-conditional log-linear regression of actual PPR on ECR rank
+    from training data; apply it at test time.  A model that doesn't beat this
+    baseline is an expensive way to reproduce consensus rankings.
+
+    Requires tier-1 feature ``ecr_rank`` in the feature matrix.
+    Falls back to random-walk prediction when ECR is missing.
+    """
+
+    name = "market_consensus"
+    feature_spec = FeatureSpec(max_tier=1, required=("ecr_rank", "pos_code"))
+
+    def __init__(self) -> None:
+        self._pos_models: dict[int, tuple[float, float]] = {}  # (intercept, slope) per pos
+        self._global_model: tuple[float, float] = (150.0, -0.5)
+        self._fitted = False
+
+    def fit(self, X: pd.DataFrame, y: pd.Series) -> "MarketConsensusModel":
+        if "ecr_rank" not in X.columns:
+            # No ECR data available in this training window — degenerate to position mean
+            self._fitted = True
+            return self
+
+        has_ecr = X["ecr_rank"].notna()
+        Xr = X[has_ecr]
+        yr = y[has_ecr]
+
+        if len(Xr) >= 50:
+            log_rank = np.log1p(Xr["ecr_rank"].clip(lower=1).values)
+            coeffs = np.polyfit(log_rank, yr.values, 1)
+            self._global_model = (float(coeffs[1]), float(coeffs[0]))
+
+        for code in X["pos_code"].unique():
+            mask = has_ecr & (X["pos_code"] == code)
+            if mask.sum() < 20:
+                continue
+            xc = np.log1p(X.loc[mask, "ecr_rank"].clip(lower=1).values)
+            yc = y[mask].values
+            c = np.polyfit(xc, yc, 1)
+            self._pos_models[int(code)] = (float(c[1]), float(c[0]))
+
+        self._fitted = True
+        return self
+
+    def predict(self, X: pd.DataFrame) -> np.ndarray:
+        if not self._fitted:
+            raise NotFittedError("Call fit() before predict()")
+        if "ecr_rank" not in X.columns:
+            return X["points_ppr_lag1"].fillna(0).values
+
+        out = np.zeros(len(X))
+        for i, (idx, row) in enumerate(X.iterrows()):
+            ecr = row.get("ecr_rank", float("nan"))
+            if pd.isna(ecr):
+                out[i] = row.get("points_ppr_lag1", 0.0) or 0.0
+                continue
+            log_ecr = float(np.log1p(max(ecr, 1)))
+            code = int(row.get("pos_code", -1))
+            intercept, slope = self._pos_models.get(code, self._global_model)
+            out[i] = max(0.0, intercept + slope * log_ecr)
+        return out
+
+
+# ---------------------------------------------------------------------------
+# Factory
+# ---------------------------------------------------------------------------
+
+def MODELS(max_tier: int = 4) -> list:
+    """Return one fresh instance of every available model.
+
+    Tier-aware models (Ridge, XGBoost, HierarchicalBayes) are configured with
+    ``max_tier``.  Tier-0 baselines are always returned unchanged.
+
+    Args:
+        max_tier: Passed to Ridge, XGBoostModel, HierarchicalBayesModel.
+                  Set to 0 to get all models consuming only base features.
+    """
+    models: list = [
         RandomWalkModel(),
         PositionMeanModel(),
         ExponentialSmoothingModel(),
         RegressionToMeanModel(),
-        RidgeModel(alpha=10.0),
+        RidgeModel(alpha=10.0, max_tier=max_tier),
     ]
+
     if _XGB_AVAILABLE:
-        models.append(XGBoostModel())
+        models.append(XGBoostModel(max_tier=max_tier))
+    else:
+        warnings.warn(
+            "xgboost not installed; XGBoostModel excluded from MODELS()."
+            " pip install xgboost",
+            stacklevel=2,
+        )
+
     if _PYMC_AVAILABLE:
-        models.append(HierarchicalBayesModel(use_map=True))
+        models.append(HierarchicalBayesModel(use_map=False, max_tier=min(max_tier, 1)))
+    else:
+        warnings.warn(
+            "pymc not installed; HierarchicalBayesModel excluded from MODELS()."
+            " pip install pymc",
+            stacklevel=2,
+        )
+
+    if max_tier >= 1:
+        models.append(MarketConsensusModel())
+
     return models
