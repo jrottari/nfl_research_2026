@@ -28,11 +28,10 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from ..config import CACHE_DIR as _CACHE_DIR
 from .source_cache import cached_loader
 
 log = logging.getLogger(__name__)
-
-_CACHE_DIR = Path(__file__).resolve().parents[3] / "data" / "cache"
 
 FIRST_SEASON = 2006  # ff_opportunity first available
 ECR_FIRST_SEASON = 2021  # load_ff_rankings(type="all") preseason 'redraft-overall' coverage

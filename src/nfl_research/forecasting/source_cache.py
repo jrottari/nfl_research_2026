@@ -14,7 +14,7 @@ from typing import Any
 
 import pandas as pd
 
-CACHE_DIR = Path(__file__).resolve().parents[3] / "data" / "cache"
+from ..config import CACHE_DIR
 
 
 def cached_loader(

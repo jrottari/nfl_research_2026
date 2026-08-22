@@ -222,7 +222,7 @@ def main(argv=None) -> int:
         if result is None or args.no_export:
             continue
         lineup, bench_df = result
-        out_dir = EXPORT_DIR / "sleeper"
+        out_dir = EXPORT_DIR / "sleeper" / f"week_{week}"
         out_dir.mkdir(parents=True, exist_ok=True)
         out_path = out_dir / f"{season}_wk{week:02d}_{_slugify(league.league_name)}.csv"
         pd.concat([lineup.assign(status="starter"), bench_df.assign(status="bench", slot="")],

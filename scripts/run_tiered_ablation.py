@@ -16,6 +16,7 @@ from nfl_research.forecasting.features import (  # noqa: E402
     build_panel,
 )
 from nfl_research.forecasting.source_cache import load_tier_sources  # noqa: E402
+from nfl_research.config import PROCESSED_DIR  # noqa: E402
 
 
 def parse_args(argv=None):
@@ -30,7 +31,7 @@ def parse_args(argv=None):
         action="store_true",
         help="in-fold GridSearchCV for Ridge/XGBoost hyperparameters (Part 5.5)",
     )
-    parser.add_argument("--out-dir", type=Path, default=REPO_ROOT / "data" / "processed")
+    parser.add_argument("--out-dir", type=Path, default=PROCESSED_DIR)
     return parser.parse_args(argv)
 
 

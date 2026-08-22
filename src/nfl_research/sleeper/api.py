@@ -15,13 +15,13 @@ from __future__ import annotations
 
 import json
 import time
-from pathlib import Path
 from typing import Any
 
 import requests
 
+from ..config import CACHE_DIR
+
 BASE_URL = "https://api.sleeper.app/v1"
-CACHE_DIR = Path(__file__).resolve().parents[3] / "data" / "cache"
 PLAYERS_CACHE_PATH = CACHE_DIR / "sleeper_players.json"
 PLAYERS_CACHE_MAX_AGE_SECONDS = 20 * 60 * 60  # Sleeper: fetch at most once/day
 

@@ -18,11 +18,10 @@ from pathlib import Path
 
 import pandas as pd
 
+from ..config import CACHE_DIR as _CACHE_DIR
 from .source_cache import cached_loader
 
 log = logging.getLogger(__name__)
-
-_CACHE_DIR = Path(__file__).resolve().parents[3] / "data" / "cache"
 
 
 # ---------------------------------------------------------------------------

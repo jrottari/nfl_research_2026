@@ -6,7 +6,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-DATA_DIR = REPO_ROOT / "data"
+# All generated/cached data lives outside the repo, on Google Drive, so it's
+# backed up without bloating git (data/ is gitignored anyway).
+DATA_DIR = Path(r"G:\My Drive\repos\nfl_research_2026\data")
+CACHE_DIR = DATA_DIR / "cache"
 PROCESSED_DIR = DATA_DIR / "processed"
 EXPORT_DIR = DATA_DIR / "exports"
 
