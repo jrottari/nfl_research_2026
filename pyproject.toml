@@ -14,6 +14,8 @@ dependencies = [
     "scipy>=1.12",        # minimize_scalar for ES alpha fitting
     "xgboost>=2.0",       # gradient boosting forecast model
     "requests>=2.31",     # Sleeper API client
+    "gspread>=6.0",              # Google Sheets client (OAuth-based)
+    "google-auth-oauthlib>=1.2", # OAuth consent flow for gspread.oauth()
 ]
 
 [project.optional-dependencies]
