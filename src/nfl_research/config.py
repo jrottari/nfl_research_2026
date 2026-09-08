@@ -13,6 +13,10 @@ CACHE_DIR = DATA_DIR / "cache"
 PROCESSED_DIR = DATA_DIR / "processed"
 EXPORT_DIR = DATA_DIR / "exports"
 
+# The user's own Sleeper username, used as the default for scripts that pull
+# their leagues/rosters (e.g. scripts/sleeper_lineup.py).
+SLEEPER_USERNAME = "joeyo125"
+
 
 def _replacement_rank() -> dict[str, int]:
     # Positional rank treated as replacement level in a 12-team league

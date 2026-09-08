@@ -11,13 +11,14 @@ from __future__ import annotations
 
 import warnings
 from dataclasses import dataclass, field
+from typing import Any
 
 import pandas as pd
 
 from ..forecasting.data import load_multi_season
 from .data import defense_vs_position, load_multi_season_weekly
 from .features import build_weekly_panel, make_upcoming_row, weekly_feature_matrix
-from .models import RidgeWeeklyModel
+from .models import RidgeWeeklyModel, XGBoostWeeklyModel
 from .variance import (
     add_variance_features,
     attach_risk_bands,
@@ -32,7 +33,8 @@ _POS_CODE = {"QB": 0, "RB": 1, "WR": 2, "TE": 3}
 
 @dataclass
 class WeeklyModelBundle:
-    model: RidgeWeeklyModel
+    model: Any  # RidgeWeeklyModel or XGBoostWeeklyModel — both expose fit(X, y)/predict(X)
+    model_type: str
     scaler: dict = field(repr=False)
     tercile_thresholds: dict[str, tuple[float, float]]
     weekly: pd.DataFrame = field(repr=False)
@@ -41,11 +43,19 @@ class WeeklyModelBundle:
     panel: pd.DataFrame = field(repr=False)
 
 
-def fit_weekly_model(seasons: list[int], alpha: float = 5.0) -> WeeklyModelBundle:
+def fit_weekly_model(
+    seasons: list[int], alpha: float = 5.0, model_type: str = "ridge"
+) -> WeeklyModelBundle:
     """Load all available weekly/season data for ``seasons``, build the panel
-    (rolling + variance features), and fit the production Ridge model on every
-    row. Seasons already cached locally are read from disk; the current season
-    is fetched live. See reports/weekly_forecast_report.md for why Ridge.
+    (rolling + variance features), and fit a weekly model on every row.
+    Seasons already cached locally are read from disk; the current season is
+    fetched live.
+
+    ``model_type``: "ridge" (the production default — see
+    reports/weekly_forecast_report.md for why: statistically tied with
+    XGBoost on MAE, simpler/inspectable) or "xgboost" (same accuracy,
+    available when you specifically want the XGBoost forecast, e.g. as one
+    of several lineup variants to compare).
     """
     weekly = load_multi_season_weekly(seasons)
     season_totals = load_multi_season(seasons)
@@ -54,7 +64,13 @@ def fit_weekly_model(seasons: list[int], alpha: float = 5.0) -> WeeklyModelBundl
     panel = build_weekly_panel(weekly, defense_df=defense_df, prior_season_df=season_totals)
     panel = add_variance_features(panel)
 
-    model = RidgeWeeklyModel(alpha=alpha)
+    if model_type == "ridge":
+        model = RidgeWeeklyModel(alpha=alpha)
+    elif model_type == "xgboost":
+        model = XGBoostWeeklyModel()
+    else:
+        raise ValueError(f"model_type must be 'ridge' or 'xgboost', got {model_type!r}")
+
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         model.fit(weekly_feature_matrix(panel), panel["target"])
@@ -64,6 +80,7 @@ def fit_weekly_model(seasons: list[int], alpha: float = 5.0) -> WeeklyModelBundl
 
     return WeeklyModelBundle(
         model=model,
+        model_type=model_type,
         scaler=scaler,
         tercile_thresholds=tercile_thresholds,
         weekly=weekly,
