@@ -46,17 +46,11 @@ import pandas as pd
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from nfl_research.config import EXPORT_DIR
-from nfl_research.sleeper.optimize import (
-    MODELED_POSITIONS,
-    SLOT_ELIGIBILITY,
-    adjust_for_scoring,
-    modeled_slots,
-    optimize_lineup,
-)
+from nfl_research.config import EXPORT_DIR, SLEEPER_USERNAME
+from nfl_research.sleeper.report import build_model_league_board
 from nfl_research.sleeper.rosters import LeagueRoster, fetch_all_league_rosters
 from nfl_research.weekly.data import load_multi_season_weekly
-from nfl_research.weekly.projection import fit_weekly_model, project_players
+from nfl_research.weekly.projection import fit_weekly_model
 
 # League/team/player names come from Sleeper as arbitrary user-entered Unicode
 # (emoji, smart quotes, etc.) — Windows consoles default to cp1252, which can't
@@ -73,7 +67,8 @@ def infer_current_season(today: dt.date | None = None) -> int:
 
 def parse_args(argv=None):
     p = argparse.ArgumentParser(description="Sleeper multi-league lineup optimizer")
-    p.add_argument("--username", required=True, help="Sleeper username or numeric user_id")
+    p.add_argument("--username", default=SLEEPER_USERNAME,
+                   help=f"Sleeper username or numeric user_id (default: {SLEEPER_USERNAME})")
     p.add_argument("--season", type=int, default=None, help="season (default: current)")
     p.add_argument("--week", type=int, default=None, help="upcoming week (default: next unplayed)")
     p.add_argument("--first-season", type=int, default=2021,
@@ -92,73 +87,22 @@ def _slugify(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_") or "league"
 
 
-def _fill_unmodeled_slot(slot: str, roster_df: pd.DataFrame) -> dict | None:
-    """K/DEF/IDP slots aren't projected — carry over the actual current
-    Sleeper starter for that slot, or any eligible rostered player if none is
-    currently started, or leave it empty."""
-    eligible = SLOT_ELIGIBILITY.get(slot, {slot})
-    startable = roster_df["position"].isin(eligible) & ~roster_df["is_ir"] & ~roster_df["is_taxi"]
-    pool = roster_df[startable]
-    if pool.empty:
-        return None
-    started = pool[pool["is_starter"]]
-    pick = started.iloc[0] if not started.empty else pool.iloc[0]
-    row = pick.to_dict()
-    row["slot"] = slot
-    return row
-
-
 def process_league(
     league: LeagueRoster, bundle, season: int, week: int, objective: str
 ) -> tuple[pd.DataFrame, pd.DataFrame] | None:
     print(f"\n{'=' * 70}\n{league.league_name}  (team: {league.team_name})\n{'=' * 70}")
 
-    roster_df = league.players
-    if roster_df.empty:
+    if league.players.empty:
         print("  Roster is empty (league likely hasn't drafted yet) — skipping.")
         return None
 
-    candidates = set(
-        roster_df.loc[
-            roster_df["position"].isin(MODELED_POSITIONS)
-            & roster_df["gsis_id"].notna()
-            & ~roster_df["is_ir"]
-            & ~roster_df["is_taxi"],
-            "gsis_id",
-        ]
-    )
-    if not candidates:
-        print("  No modeled (QB/RB/WR/TE) players resolved on this roster — skipping.")
-        return
-
-    projected = project_players(candidates, bundle, season=season, week=week)
-    if projected.empty:
-        print("  No projections could be built for this roster.")
-        return
-
-    projected = adjust_for_scoring(projected, league.scoring_settings)
-    proj_cols = ["player_id", "proj_points", "floor", "ceiling", "explosiveness_score", "risk_tier"]
-    board = roster_df.merge(
-        projected[proj_cols], left_on="gsis_id", right_on="player_id", how="left",
-    )
-
     objective_col = {"mean": "proj_points", "floor": "floor", "ceiling": "ceiling"}[objective]
-    startable = board[
-        board["position"].isin(MODELED_POSITIONS)
-        & board["proj_points"].notna()
-        & ~board["is_ir"]
-        & ~board["is_taxi"]
-    ].reset_index(drop=True)
-
-    m_slots = modeled_slots(league.roster_positions)
-    starters_df, bench_df, empty_slots = optimize_lineup(
-        startable, m_slots, objective_col=objective_col
+    lineup, bench_df, empty_slots = build_model_league_board(
+        league, bundle, season, week, objective_col=objective_col
     )
-
-    unmodeled = [s for s in league.roster_positions if s not in m_slots]
-    unmodeled_rows = [r for s in unmodeled if (r := _fill_unmodeled_slot(s, roster_df)) is not None]
-
-    lineup = pd.concat([starters_df, pd.DataFrame(unmodeled_rows)], ignore_index=True, sort=False)
+    if lineup.empty:
+        print("  No modeled (QB/RB/WR/TE) players or projections for this roster.")
+        return None
 
     wanted_cols = ["slot", "player_name", "position", "proj_points", "floor", "ceiling",
                    "explosiveness_score", "risk_tier"]
@@ -168,7 +112,7 @@ def process_league(
     if empty_slots:
         print(f"\nCould not fill: {empty_slots} (not enough eligible rostered players)")
 
-    current_starters = set(roster_df.loc[roster_df["is_starter"], "player_name"])
+    current_starters = set(league.players.loc[league.players["is_starter"], "player_name"])
     recommended = set(lineup["player_name"]) if not lineup.empty else set()
     bench_but_should_start = recommended - current_starters
     started_but_should_bench = current_starters - recommended
