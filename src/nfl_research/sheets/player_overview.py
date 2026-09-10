@@ -42,6 +42,7 @@ CORRELATION_TAB = "Correlation Score"
 
 # (output column name, source column in roster_board.build_full_roster_board's output)
 STAT_COLS = [
+    ("team", "team"),
     ("ecr_consensus_rank", "rank"),
     ("ecr_best_rank", "best"),
     ("ecr_worst_rank", "worst"),

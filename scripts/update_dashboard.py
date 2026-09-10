@@ -22,7 +22,7 @@ Writes, in one persistent spreadsheet:
     three headline metrics and swap counts — the source data for a Sheets
     trend chart across the season.
   - "Player Overview": one row per unique rostered player, with
-    ecr_consensus_rank/ecr_best_rank/ecr_worst_rank/xgboost_proj_points/
+    team/ecr_consensus_rank/ecr_best_rank/ecr_worst_rank/xgboost_proj_points/
     xgboost_ceiling_points/last_game_points/last_game, one checkbox column
     per league (currently started — blank if not on that roster), and two
     live-formula columns (num_leagues_rostered/num_leagues_starting) that
