@@ -12,6 +12,9 @@ DATA_DIR = Path(r"G:\My Drive\repos\nfl_research_2026\data")
 CACHE_DIR = DATA_DIR / "cache"
 PROCESSED_DIR = DATA_DIR / "processed"
 EXPORT_DIR = DATA_DIR / "exports"
+# Where scripts/update_dashboard.py drops a dated .xlsx copy of the Sheets
+# dashboard on every run (iCloud-synced).
+DASHBOARD_XLSX_DIR = Path(r"C:\Users\user\iCloudDrive\fantasy_football\2026")
 
 # The user's own Sleeper username, used as the default for scripts that pull
 # their leagues/rosters (e.g. scripts/sleeper_lineup.py).

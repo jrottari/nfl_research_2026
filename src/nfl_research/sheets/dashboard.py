@@ -8,8 +8,12 @@ every later run updates the same Sheet rather than creating duplicates.
 
 from __future__ import annotations
 
+import datetime as dt
+from pathlib import Path
+
 import gspread
 import pandas as pd
+from gspread.utils import ExportFormat
 
 from ..config import CACHE_DIR
 from .auth import get_client
@@ -72,3 +76,18 @@ def append_history(spreadsheet: gspread.Spreadsheet, rows: pd.DataFrame) -> None
         ws.update(values=[header] + values, range_name="A1")
     else:
         ws.append_rows(values, value_input_option="USER_ENTERED")
+
+
+def export_xlsx(
+    spreadsheet: gspread.Spreadsheet, out_dir: Path, date: dt.date | None = None
+) -> Path:
+    """Download the whole spreadsheet (every tab, with formulas and charts)
+    as ``<out_dir>/<YYYY-MM-DD>_fantasy_dashboard.xlsx`` via the Drive export
+    endpoint, overwriting any same-day file. Returns the written path.
+    """
+    date = date or dt.date.today()
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / f"{date.isoformat()}_fantasy_dashboard.xlsx"
+    out_path.write_bytes(spreadsheet.export(format=ExportFormat.EXCEL))
+    return out_path

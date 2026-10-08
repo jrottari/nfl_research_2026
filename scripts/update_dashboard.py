@@ -43,6 +43,10 @@ Writes, in one persistent spreadsheet:
     started/rostered across the most leagues), and "ECR Range by League"'s
     own grouped bar chart (best/consensus/worst per league).
 
+After the Sheet is updated, the whole spreadsheet is also exported as
+``<YYYY-MM-DD>_fantasy_dashboard.xlsx`` into ``DASHBOARD_XLSX_DIR`` (iCloud
+Drive by default; override with ``--xlsx-dir``, skip with ``--no-xlsx``).
+
 Usage
 -----
     python scripts/update_dashboard.py
@@ -62,7 +66,7 @@ import pandas as pd
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from nfl_research.config import SLEEPER_USERNAME
+from nfl_research.config import DASHBOARD_XLSX_DIR, SLEEPER_USERNAME
 from nfl_research.ecr.fetch import load_weekly_ecr
 from nfl_research.ecr.report import build_league_board
 from nfl_research.roster_board import build_full_roster_board
@@ -70,6 +74,7 @@ from nfl_research.sheets.auth import get_client
 from nfl_research.sheets.dashboard import (
     SUMMARY_TAB,
     append_history,
+    export_xlsx,
     get_or_create_spreadsheet,
     push_dataframe,
 )
@@ -102,6 +107,10 @@ def parse_args(argv=None):
     p.add_argument("--first-season", type=int, default=2021)
     p.add_argument("--force-refresh", action="store_true",
                    help="re-scrape FantasyPros instead of using the cached ECR snapshot")
+    p.add_argument("--xlsx-dir", type=Path, default=DASHBOARD_XLSX_DIR,
+                   help="folder to write the dated .xlsx copy of the dashboard into")
+    p.add_argument("--no-xlsx", action="store_true",
+                   help="skip writing the .xlsx copy")
     return p.parse_args(argv)
 
 
@@ -245,6 +254,10 @@ def main(argv=None) -> int:
 
     push_summary_charts(spreadsheet, summary_df)
     print("This week's Summary bar charts updated")
+
+    if not args.no_xlsx:
+        xlsx_path = export_xlsx(spreadsheet, args.xlsx_dir)
+        print(f"Excel copy written: {xlsx_path}")
 
     print(f"\nDone. Open the dashboard: {spreadsheet.url}")
     return 0
